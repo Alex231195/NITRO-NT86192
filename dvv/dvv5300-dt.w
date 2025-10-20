@@ -27,7 +27,7 @@ DEF INPUT-OUTPUT PARAMETER p-dt-estorno AS DATE NO-UNDO.
   DEF VAR v_dat_ini AS DATE NO-UNDO.
 
 &IF "{&EMSFND_VERSION}" >= "1.00" &THEN
-    {include/i-license-manager.i dvv5300-dt MEX}
+    {include/i-license-manager.i <programa> MUT}
 &ENDIF
 
 /* Create an unnamed pool to store all the widgets created 
@@ -204,8 +204,7 @@ END.
 &ANALYZE-SUSPEND _UIB-CODE-BLOCK _CONTROL bt-cancela D-Dialog
 ON CHOOSE OF bt-cancela IN FRAME D-Dialog /* Cancelar */
 DO:
-  ASSIGN p-dt-contab  = ?
-         p-dt-estorno = ?.
+  ASSIGN p-dt-contab = ?.
 END.
 
 /* _UIB-CODE-BLOCK-END */
@@ -350,27 +349,22 @@ PROCEDURE local-initialize :
   DEF VAR v_dat AS DATE NO-UNDO.
   DEF VAR v_dat_ini AS DATE NO-UNDO.
 
-/* Se o caller não trouxe datas, propomos defaults; caso contrário, exibimos o que veio */
-IF p-dt-contab  = ? OR p-dt-estorno = ? THEN DO:
-    ASSIGN v_dat = TODAY.
+  ASSIGN v_dat = TODAY.
 
-    IF MONTH(v_dat) = 01 THEN
-        ASSIGN v_dat = DATE(12 , DAY(v_dat), YEAR(v_dat) - 1).
-    ELSE
-        ASSIGN v_dat = DATE(MONTH(v_dat) - 1, DAY(v_dat), YEAR(v_dat)).
+  IF MONTH(v_dat) = 01 THEN
+      /*ASSIGN v_dat = date(STRING(DAY(v_dat)) + "12" + STRING(YEAR(v_dat) - 1)).*/
+      ASSIGN v_dat = date(12 , DAY(v_dat), year(v_dat) - 1).
+  ELSE
+      ASSIGN v_dat = date(month(v_dat) - 1, DAY(v_dat), year(v_dat)).
+      /*ASSIGN v_dat = date(STRING(DAY(v_dat)) + STRING(MONTH(v_dat) - 1) + STRING(YEAR(v_dat))).*/
 
-    ASSIGN v_dat     = DATE(MONTH(v_dat), 15, YEAR(v_dat)) + 30
-           v_dat     = DATE(MONTH(v_dat), 01, YEAR(v_dat)) - 1
-           v_dat_ini = DATE(MONTH(v_dat), 01, YEAR(v_dat)).
+  assign v_dat = date(month(v_dat), 15, year(v_dat)) + 30
+         v_dat = date(month(v_dat), 01, year(v_dat)) - 1.
 
-    ASSIGN dt-contab:SCREEN-VALUE  = STRING(v_dat)
-           dt-estorno:SCREEN-VALUE = STRING(v_dat_ini).
-END.
-ELSE DO:
-    /* Mostra as datas já preenchidas pelo chamador */
-    ASSIGN dt-contab:SCREEN-VALUE  = STRING(p-dt-contab)
-           dt-estorno:SCREEN-VALUE = STRING(p-dt-estorno).
-END.
+  ASSIGN v_dat_ini = DATE(MONTH(v_dat), 01, YEAR(v_dat)).
+
+  ASSIGN dt-contab:SCREEN-VALUE  = string(v_dat)
+         dt-estorno:SCREEN-VALUE = string(v_dat_ini).
 
   /* Code placed here will execute AFTER standard behavior.    */
 

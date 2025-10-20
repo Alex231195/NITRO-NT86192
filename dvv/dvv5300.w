@@ -174,15 +174,15 @@ DEF VAR p-cta-ctbl-ini    AS CHARACTER NO-UNDO.
 DEF VAR p-cta-ctbl-fim    AS CHARACTER NO-UNDO.
 DEF VAR p-lg-dex            AS LOG NO-UNDO.    
 DEF VAR p-lg-dvvme          AS LOG NO-UNDO.    
-DEF VAR p-lg-dvvmi          AS LOG NO-UNDO.    
+DEF VAR p-lg-dvvmi          AS LOG NO-UNDO.
+DEF VAR p-lg-dvvrem         AS LOG NO-UNDO.    
 DEF VAR p-lg-pdex            AS LOG NO-UNDO.    
 DEF VAR p-lg-pdvvme          AS LOG NO-UNDO.    
-DEF VAR p-lg-pdvvmi          AS LOG NO-UNDO.    
+DEF VAR p-lg-pdvvmi          AS LOG NO-UNDO.
+DEF VAR p-lg-pdvvrem        AS LOG NO-UNDO.     
 DEF VAR p-ind-situacao      AS INT NO-UNDO.    
 DEF VAR c-todos-nenhum   AS CHARACTER NO-UNDO.
-DEF VAR i-transbordo AS INTEGER NO-UNDO .
-DEFINE VARIABLE p-lg-dvvrem       AS LOGICAL   NO-UNDO.  
-DEFINE VARIABLE p-lg-pdvvrem      AS LOGICAL   NO-UNDO.  
+DEF VAR i-transbordo AS INTEGER NO-UNDO.
 
 def var h as handle.
 DEF VAR h-acomp AS HANDLE NO-UNDO.
@@ -946,21 +946,23 @@ ON CHOOSE OF bt-filtro IN FRAME f-cad /* Filtro */
 DO:
     /*ASSIGN chCtrlFrame:PSTIMER:INTERVAL = 0.*/
     ASSIGN gl-atualiza-filtro = NO.
-	RUN dvv/dvv5300-filtro.w (OUTPUT p-cod-estabel-ini,
-							  OUTPUT p-cod-estabel-fim,
-							  OUTPUT p-dt-provisao-ini,
-							  OUTPUT p-dt-provisao-fim,
-							  OUTPUT p-dt-lancto-ini,
-							  OUTPUT p-dt-lancto-fim,
-							  OUTPUT p-cta-ctbl-ini,
-							  OUTPUT p-cta-ctbl-fim,
-							  OUTPUT p-lg-dex,
-							  OUTPUT p-lg-dvvme,
-							  OUTPUT p-lg-dvvmi,
-							  OUTPUT p-lg-pdex,
-							  OUTPUT p-lg-pdvvme,
-							  OUTPUT p-lg-pdvvmi,
-							  OUTPUT p-ind-situacao).
+    RUN dvv/dvv5300-filtro.w (OUTPUT p-cod-estabel-ini,
+                              OUTPUT p-cod-estabel-fim,
+                              OUTPUT p-dt-provisao-ini,
+                              OUTPUT p-dt-provisao-fim,
+                              OUTPUT p-dt-lancto-ini,
+                              OUTPUT p-dt-lancto-fim,
+                              OUTPUT p-cta-ctbl-ini,
+                              OUTPUT p-cta-ctbl-fim,
+                              OUTPUT p-lg-dex,
+                              OUTPUT p-lg-dvvme,
+                              OUTPUT p-lg-dvvmi,
+							  OUTPUT p-lg-dvvrem,
+                              OUTPUT p-lg-pdex,
+                              OUTPUT p-lg-pdvvme,
+                              OUTPUT p-lg-pdvvmi,
+							  OUTPUT p-lg-pdvvrem,
+                              OUTPUT p-ind-situacao).
     IF gl-atualiza-filtro THEN DO:
         run pi-gerar-dados.
         open query {&browse-name} for each tt-dvv_log_provisao.
@@ -1291,12 +1293,12 @@ ASSIGN p-cod-estabel-ini  = ""
        p-lg-dex           = YES
        p-lg-dvvme         = YES
        p-lg-dvvmi         = YES
+	   p-lg-dvvrem        = YES
        p-lg-pdex           = YES
        p-lg-pdvvme         = YES
        p-lg-pdvvmi         = YES
-       p-lg-dvvrem         = NO    /* NOVO */
-       p-lg-pdvvrem        = NO    /* NOVO */
-       p-ind-situacao      = 1.
+	   p-lg-pdvvrem       = YES
+       p-ind-situacao     = 1.
   run pi-before-initialize.
 
   {include/win-size.i}
@@ -1511,11 +1513,13 @@ IF p-ind-situacao = 5 THEN DO:
             IF NOT p-lg-dex   AND dvv_log_provisao.origem = "DEX" THEN NEXT.
             IF NOT p-lg-dvvme AND dvv_log_provisao.origem = "DVV ME" THEN NEXT.
             IF NOT p-lg-dvvmi AND dvv_log_provisao.origem = "DVV MI" THEN NEXT.
-			IF NOT p-lg-dvvrem  AND dvv_log_provisao.origem = "DVV REM" THEN NEXT.  
+			IF NOT p-lg-dvvrem AND ( CAN-DO("DVV-REM,DVV REM", dvv_log_provisao.origem)
+                      OR CAN-DO("DVV-REM,DVV REM", dvv_log_provisao.origem_movto) ) THEN NEXT.
             IF NOT p-lg-pdex   AND (dvv_log_provisao.origem = "PDEX"    OR dvv_log_provisao.origem = "EPDEX") THEN NEXT.
             IF NOT p-lg-pdvvme AND (dvv_log_provisao.origem = "PDVV ME" OR dvv_log_provisao.origem = "EPDVV ME") THEN NEXT.
             IF NOT p-lg-pdvvmi AND (dvv_log_provisao.origem = "PDVV MI" OR dvv_log_provisao.origem = "EPDVV MI") THEN NEXT.
-			IF NOT p-lg-pdvvrem  AND (dvv_log_provisao.origem = "PDVV REM" OR dvv_log_provisao.origem = "EPDVV REM") THEN NEXT.  /* NOVO */.
+			/* NOVO: PDVV-REM e EPDVV-REM — com hífen e sem hífen */
+			IF NOT p-lg-pdvvrem AND CAN-DO("PDVV-REM,PDVV REM,EPDVV-REM,EPDVV REM", dvv_log_provisao.origem) THEN NEXT.
 
             CREATE tt-dvv_log_provisao.
             BUFFER-COPY dvv_log_provisao TO tt-dvv_log_provisao.
@@ -1580,11 +1584,9 @@ ELSE DO:
             IF NOT p-lg-dex   AND dvv_log_provisao.origem = "DEX" THEN NEXT.
             IF NOT p-lg-dvvme AND dvv_log_provisao.origem = "DVV ME" THEN NEXT.
             IF NOT p-lg-dvvmi AND dvv_log_provisao.origem = "DVV MI" THEN NEXT.
-			IF NOT p-lg-dvvrem  AND dvv_log_provisao.origem = "DVV-REM" THEN NEXT.
             IF NOT p-lg-pdex   AND (dvv_log_provisao.origem = "PDEX"    OR dvv_log_provisao.origem = "EPDEX") THEN NEXT.
             IF NOT p-lg-pdvvme AND (dvv_log_provisao.origem = "PDVV ME" OR dvv_log_provisao.origem = "EPDVV ME") THEN NEXT.
             IF NOT p-lg-pdvvmi AND (dvv_log_provisao.origem = "PDVV MI" OR dvv_log_provisao.origem = "EPDVV MI") THEN NEXT.
-			IF NOT p-lg-pdvvrem  AND (dvv_log_provisao.origem = "PDVV-REM" OR dvv_log_provisao.origem = "EPDVV-REM") THEN NEXT.  /* NOVO */
 
             CREATE tt-dvv_log_provisao.
             BUFFER-COPY dvv_log_provisao TO tt-dvv_log_provisao.

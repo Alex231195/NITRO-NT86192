@@ -2,9 +2,7 @@
     FOR EACH tt-dvv_log_prov_desp:
 
         IF dvv_log_provisao.origem_movto = "DVV MI"
-        OR dvv_log_provisao.origem_movto = "PDVV MI"
-		OR  dvv_log_provisao.origem_movto = "DVV-REM"    
-        OR  dvv_log_provisao.origem_movto = "PDVV_REM"	THEN DO:
+        OR dvv_log_provisao.origem_movto = "PDVV MI" THEN DO:
             FIND nota-fiscal WHERE
                  nota-fiscal.cod-estabel = tt-dvv_log_prov_desp.cod_estabel AND
                  nota-fiscal.serie       = "6"                               AND
@@ -68,9 +66,6 @@
                     IF AVAIL es_natur_oper AND es_natur_oper.tip_oper_exp = 3 THEN
                         assign tt-dvv_log_prov_desp_item.tipo_venda = "Venda".
                 end.
-				
-				IF INDEX(dvv_log_provisao.origem_movto, "REM") > 0 THEN
-                    ASSIGN tt-dvv_log_prov_desp_item.tipo_venda = "Consignada".
                         
                 if dvv_log_provisao.cod_estabel = "002" THEN DO:
                      ASSIGN p-data-real = dvv_log_provisao.dt_provisao.

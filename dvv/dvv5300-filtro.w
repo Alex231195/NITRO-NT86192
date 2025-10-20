@@ -52,12 +52,12 @@ DEF OUTPUT PARAMETER p-cta-ctbl-fim    AS CHARACTER NO-UNDO.
 DEF OUTPUT PARAMETER p-lg-dex            AS LOG NO-UNDO.
 DEF OUTPUT PARAMETER p-lg-dvvme          AS LOG NO-UNDO.
 DEF OUTPUT PARAMETER p-lg-dvvmi          AS LOG NO-UNDO.
+DEF OUTPUT PARAMETER p-lg-dvvrem         AS LOG NO-UNDO.
 DEF OUTPUT PARAMETER p-lg-pdex            AS LOG NO-UNDO.
 DEF OUTPUT PARAMETER p-lg-pdvvme          AS LOG NO-UNDO.
 DEF OUTPUT PARAMETER p-lg-pdvvmi          AS LOG NO-UNDO.
-DEF OUTPUT PARAMETER p-ind-situacao      AS INT NO-UNDO.
-DEF OUTPUT PARAMETER p-lg-dvvrem         AS LOG NO-UNDO.
 DEF OUTPUT PARAMETER p-lg-pdvvrem        AS LOG NO-UNDO.
+DEF OUTPUT PARAMETER p-ind-situacao      AS INT NO-UNDO.
 
 
 DEFINE VARIABLE    wh-pesquisa  AS HANDLE  NO-UNDO.
@@ -82,13 +82,12 @@ DEFINE VARIABLE    l-implanta   AS LOGICAL NO-UNDO.
 /* Standard List Definitions                                            */
 &Scoped-Define ENABLED-OBJECTS c-cod-estabel-ini c-cod-estabel-fim ~
 dt-provisao-ini dt-provisao-fim dt-lancto-ini dt-lancto-fim c-cta-ctbl-ini ~
-c-cta-ctbl-fim lg-dex lg-dvvme lg-dvvmI lg-dvvrem lg-pdex lg-pdvvme lg-pdvvmI lg-pdvvrem rs-ind-situacao bt-ok bt-cancela ~
+c-cta-ctbl-fim lg-dvvme lg-dvvmI lg-dvvrem lg-pdex lg-pdvvme lg-pdvvmI lg-pdvvrem rs-ind-situacao bt-ok bt-cancela ~
 rt-buttom IMAGE-3 IMAGE-5 IMAGE-7 IMAGE-8 IMAGE-9 IMAGE-10 IMAGE-11 ~
 IMAGE-12 
-
 &Scoped-Define DISPLAYED-OBJECTS c-cod-estabel-ini c-cod-estabel-fim ~
 dt-provisao-ini dt-provisao-fim dt-lancto-ini dt-lancto-fim c-cta-ctbl-ini ~
-c-cta-ctbl-fim lg-dex lg-dvvme lg-dvvmI lg-dvvrem lg-pdex lg-pdvvme lg-pdvvmI lg-pdvvrem rs-ind-situacao  
+c-cta-ctbl-fim lg-dvvme lg-dvvmI lg-dvvrem lg-pdex lg-pdvvme lg-pdvvmI lg-pdvvrem rs-ind-situacao 
 
 /* Custom List Definitions                                              */
 /* List-1,List-2,List-3,List-4,List-5,List-6                            */
@@ -224,16 +223,16 @@ DEFINE VARIABLE lg-pdvvmi AS LOGICAL INITIAL no
      LABEL "PDVV MI" 
      VIEW-AS TOGGLE-BOX
      SIZE 11.57 BY .83 NO-UNDO.
-	 
-DEFINE VARIABLE lg-dvvrem AS LOGICAL INITIAL no 
-     LABEL "DVV-REM"
+
+DEFINE VARIABLE lg-dvvrem  AS LOGICAL INITIAL no 
+     LABEL "DVV REM"
      VIEW-AS TOGGLE-BOX
-     SIZE 12 BY .83 NO-UNDO.
+     SIZE 13 BY .83 NO-UNDO.
 
 DEFINE VARIABLE lg-pdvvrem AS LOGICAL INITIAL no 
-     LABEL "PDVV-REM"
+     LABEL "PDVV REM"
      VIEW-AS TOGGLE-BOX
-     SIZE 14 BY .83 NO-UNDO.	 
+     SIZE 13 BY .83 NO-UNDO.	 
 
 /* ************************  Frame Definitions  *********************** */
 
@@ -249,11 +248,11 @@ DEFINE FRAME F-Main
      lg-dex AT ROW 5.88 COL 15 WIDGET-ID 36
      lg-dvvme AT ROW 5.88 COL 24.72 WIDGET-ID 38
      lg-dvvmI AT ROW 5.88 COL 37 WIDGET-ID 40
+	 lg-dvvrem  AT ROW 5.88 COL 49.28
      lg-pdex AT ROW 6.88 COL 15 WIDGET-ID 36
      lg-pdvvme AT ROW 6.88 COL 24.72 WIDGET-ID 38
      lg-pdvvmI AT ROW 6.88 COL 37 WIDGET-ID 40
-	 lg-dvvrem  AT ROW 5.88 COL 49.28
-     lg-pdvvrem AT ROW 6.88 COL 49.28
+	 lg-pdvvrem  AT ROW 6.88 COL 49.28
      rs-ind-situacao AT ROW 8 COL 15.14 NO-LABEL WIDGET-ID 20
      bt-ok AT ROW 9.83 COL 2.14
      bt-cancela AT ROW 9.83 COL 13.14
@@ -263,7 +262,6 @@ DEFINE FRAME F-Main
           SIZE 11 BY .67 AT ROW 5.88 COL 3.29 WIDGET-ID 42
      "Pr‚vias:" VIEW-AS TEXT
          SIZE 11 BY .67 AT ROW 6.88 COL 3.29 WIDGET-ID 42
-	 	 
 
      rt-buttom AT ROW 9.58 COL 1.14
      IMAGE-3 AT ROW 2.54 COL 34.72
@@ -387,12 +385,12 @@ DO:
            lg-dex            = YES
            lg-dvvme          = YES
            lg-dvvmi          = YES
+		   lg-dvvrem  		 = YES
            lg-pdex           = NO
            lg-pdvvme         = NO
            lg-pdvvmi         = NO
-           rs-ind-situacao   = 1
-		   lg-dvvrem         = NO   
-		   lg-pdvvrem        = NO  .
+		   lg-pdvvrem 		 = NO
+           rs-ind-situacao   = 1.
 
     DISP c-cod-estabel-ini 
          c-cod-estabel-fim 
@@ -408,9 +406,7 @@ DO:
          lg-pdex            
          lg-pdvvme          
          lg-pdvvmi          
-         rs-ind-situacao
-		 lg-dvvrem          /* NOVO */
-         lg-pdvvrem         /* NOVO */
+         rs-ind-situacao   
         WITH FRAME f-main.
 
 
@@ -544,11 +540,11 @@ DO:
         lg-dex
         lg-dvvme
         lg-dvvmi
+		lg-dvvrem
         lg-pdex
         lg-pdvvme
         lg-pdvvmi
-		lg-dvvrem      /* NOVO */
-        lg-pdvvrem     /* NOVO */
+		lg-pdvvrem
         rs-ind-situacao.
 
     /*
@@ -577,11 +573,11 @@ DO:
            p-lg-dex          = lg-dex           
            p-lg-dvvme        = lg-dvvme         
            p-lg-dvvmi        = lg-dvvmi
+		   p-lg-dvvrem  	 = lg-dvvrem
            p-lg-pdex         = lg-pdex           
            p-lg-pdvvme       = lg-pdvvme         
            p-lg-pdvvmi       = lg-pdvvmi
-		   p-lg-dvvrem       = lg-dvvrem     /* NOVO */
-		   p-lg-pdvvrem      = lg-pdvvrem    /* NOVO */
+		   p-lg-pdvvrem 	 = lg-pdvvrem
         .
 
 
@@ -728,19 +724,14 @@ PROCEDURE enable_UI :
                Settings" section of the widget Property Sheets.
 ------------------------------------------------------------------------------*/
   DISPLAY c-cod-estabel-ini c-cod-estabel-fim dt-provisao-ini dt-provisao-fim 
-        dt-lancto-ini dt-lancto-fim c-cta-ctbl-ini c-cta-ctbl-fim lg-dex 
-        lg-dvvme lg-dvvmI lg-dvvrem  /* NOVO */
-        lg-pdex lg-pdvvme lg-pdvvmI lg-pdvvrem  /* NOVO */
-        rs-ind-situacao 
-    WITH FRAME F-Main IN WINDOW W-Win.
-
-ENABLE c-cod-estabel-ini c-cod-estabel-fim dt-provisao-ini dt-provisao-fim 
-       dt-lancto-ini dt-lancto-fim c-cta-ctbl-ini c-cta-ctbl-fim lg-dex 
-       lg-dvvme lg-dvvmI lg-dvvrem   /* NOVO */
-       lg-pdex lg-pdvvme lg-pdvvmI lg-pdvvrem   /* NOVO */
-       rs-ind-situacao bt-ok bt-cancela rt-buttom IMAGE-3 
-       IMAGE-5 IMAGE-7 IMAGE-8 IMAGE-9 IMAGE-10 IMAGE-11 IMAGE-12 
-    WITH FRAME F-Main IN WINDOW W-Win.
+          dt-lancto-ini dt-lancto-fim c-cta-ctbl-ini c-cta-ctbl-fim lg-dex 
+          lg-dvvme lg-dvvmI lg-dvvrem lg-pdex lg-pdvvme lg-pdvvmI lg-pdvvrem rs-ind-situacao 
+      WITH FRAME F-Main IN WINDOW W-Win.
+  ENABLE c-cod-estabel-ini c-cod-estabel-fim dt-provisao-ini dt-provisao-fim 
+         dt-lancto-ini dt-lancto-fim c-cta-ctbl-ini c-cta-ctbl-fim lg-dex 
+         lg-dvvme lg-dvvmI lg-dvvrem lg-pdex lg-pdvvme lg-pdvvmI lg-pdvvrem rs-ind-situacao bt-ok bt-cancela rt-buttom IMAGE-3 
+         IMAGE-5 IMAGE-7 IMAGE-8 IMAGE-9 IMAGE-10 IMAGE-11 IMAGE-12 
+      WITH FRAME F-Main IN WINDOW W-Win.
   {&OPEN-BROWSERS-IN-QUERY-F-Main}
   VIEW W-Win.
 END PROCEDURE.

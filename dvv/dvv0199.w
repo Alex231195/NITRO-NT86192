@@ -271,6 +271,11 @@ DEFINE VARIABLE l-provisao-dvv-mi AS LOGICAL INITIAL no
      VIEW-AS TOGGLE-BOX
      SIZE 22 BY .83 NO-UNDO.
 
+DEFINE VARIABLE l-provisao-dvv-rem AS LOGICAL INITIAL NO
+    LABEL "ProvisÆo DVV REM"
+    VIEW-AS TOGGLE-BOX
+    SIZE 22 BY .83 NO-UNDO.	 
+
 DEFINE VARIABLE l-previa-provisoes AS LOGICAL INITIAL no // Barth.002
      LABEL "Pr‚via das Provisäes" 
      VIEW-AS TOGGLE-BOX
@@ -494,6 +499,7 @@ DEFINE FRAME f-pg-par
      l-realizacao-dvv-mi AT ROW 3.75 COL 4 WIDGET-ID 4
      l-provisao-dvv-me AT ROW 4.75 COL 4 WIDGET-ID 6
      l-provisao-dvv-mi AT ROW 5.75 COL 4 WIDGET-ID 8
+	 l-provisao-dvv-rem AT ROW 1.75 COL 40 WIDGET-ID 28
      l-previa-provisoes AT ROW 6.75 COL 4 WIDGET-ID 26
      l-estorno AT ROW 7.63 COL 4 WIDGET-ID 10
      l-remessa-venda-estoq AT ROW 8.54 COL 4 WIDGET-ID 14
@@ -936,6 +942,8 @@ DO:
            l-provisao-dvv-mi:SCREEN-VALUE         IN FRAME f-pg-par = "YES"
            l-provisao-dvv-mi:SENSITIVE            IN FRAME f-pg-par = NO
            /* l-previa-provisoes agora é controlada pelo tg-fech-previo */
+		   l-provisao-dvv-rem:SCREEN-VALUE 		  IN FRAME f-pg-par = "YES"
+		   l-provisao-dvv-rem:SENSITIVE    		  IN FRAME f-pg-par = NO
            l-estorno:SCREEN-VALUE                 IN FRAME f-pg-par = "YES"
            l-estorno:SENSITIVE                    IN FRAME f-pg-par = NO
            l-remessa-venda-estoq:SCREEN-VALUE     IN FRAME f-pg-par = "NO"
@@ -963,6 +971,7 @@ DO:
            l-realizacao-dvv-mi:SENSITIVE          IN FRAME f-pg-par = YES
            l-provisao-dvv-me:SENSITIVE            IN FRAME f-pg-par = YES
            l-provisao-dvv-mi:SENSITIVE            IN FRAME f-pg-par = YES
+		   l-provisao-dvv-rem:SENSITIVE           IN FRAME f-pg-par = YES
            l-previa-provisoes:SENSITIVE           IN FRAME f-pg-par = YES
            l-estorno:SENSITIVE                    IN FRAME f-pg-par = YES
            l-remessa-venda-estoq:SENSITIVE        IN FRAME f-pg-par = YES
@@ -1007,6 +1016,8 @@ DO:
          l-provisao-dvv-me:SENSITIVE            IN FRAME f-pg-par = NO
          l-provisao-dvv-mi:SCREEN-VALUE         IN FRAME f-pg-par = "YES"
          l-provisao-dvv-mi:SENSITIVE            IN FRAME f-pg-par = NO
+		 l-provisao-dvv-rem:SCREEN-VALUE 		IN FRAME f-pg-par = "YES"
+		 l-provisao-dvv-rem:SENSITIVE    		IN FRAME f-pg-par = NO
          l-estorno:SCREEN-VALUE                 IN FRAME f-pg-par = "YES"
          l-estorno:SENSITIVE                    IN FRAME f-pg-par = NO
          l-remessa-venda-estoq:SCREEN-VALUE     IN FRAME f-pg-par = "NO"
@@ -1022,6 +1033,7 @@ DO:
          l-realizacao-dvv-mi:SENSITIVE          IN FRAME f-pg-par = YES
          l-provisao-dvv-me:SENSITIVE            IN FRAME f-pg-par = YES
          l-provisao-dvv-mi:SENSITIVE            IN FRAME f-pg-par = YES
+		 l-provisao-dvv-rem:SENSITIVE    		IN FRAME f-pg-par = YES
          l-estorno:SENSITIVE                    IN FRAME f-pg-par = YES
          l-remessa-venda-estoq:SENSITIVE        IN FRAME f-pg-par = YES
          l-despesa-nao-rast:SENSITIVE           IN FRAME f-pg-par = YES.
@@ -1171,14 +1183,14 @@ PROCEDURE enable_UI :
 
   {&OPEN-QUERY-f-pg-par}
   GET FIRST f-pg-par.
-  DISPLAY tg-val-neg l-realizacao-dvv-me l-realizacao-dvv-mi l-provisao-dvv-me 
+  DISPLAY tg-val-neg l-realizacao-dvv-me l-realizacao-dvv-mi l-provisao-dvv-me  l-provisao-dvv-rem  
           l-provisao-dvv-mi l-estorno l-remessa-venda-estoq l-despesa-nao-rast 
           c_descricao_moeda fi-cotacao l-previa-provisoes
       WITH FRAME f-pg-par IN WINDOW C-Win.
   IF AVAILABLE cotacao THEN 
     DISPLAY cotacao.mo-codigo 
       WITH FRAME f-pg-par IN WINDOW C-Win.
-  ENABLE tg-val-neg l-realizacao-dvv-me l-realizacao-dvv-mi l-provisao-dvv-me 
+  ENABLE tg-val-neg l-realizacao-dvv-me l-realizacao-dvv-mi l-provisao-dvv-me  l-provisao-dvv-rem
          l-provisao-dvv-mi l-estorno l-remessa-venda-estoq l-despesa-nao-rast 
          cotacao.mo-codigo fi-cotacao 
       WITH FRAME f-pg-par IN WINDOW C-Win.
@@ -1294,6 +1306,7 @@ do  on error undo, return error
            tt-param.l-realizacao-dvv-mi   = INPUT FRAME f-pg-par l-realizacao-dvv-mi
            tt-param.l-provisao-dvv-me     = INPUT FRAME f-pg-par l-provisao-dvv-me
            tt-param.l-provisao-dvv-mi     = INPUT FRAME f-pg-par l-provisao-dvv-mi
+		   tt-param.l-provisao-dvv-rem 	  = INPUT FRAME f-pg-par l-provisao-dvv-rem
            tt-param.l-previa-provisoes    = INPUT FRAME f-pg-par l-previa-provisoes
            tt-param.l-remessa-venda-estoq = INPUT FRAME f-pg-par l-remessa-venda-estoq
            tt-param.l-despesa-nao-rast    = INPUT FRAME f-pg-par l-despesa-nao-rast

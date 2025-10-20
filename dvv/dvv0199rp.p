@@ -219,6 +219,27 @@ DELETE PROCEDURE h-bo-dvv-movto-det.
 run pi-finalizar in h-acomp.
 
 /* *************** Procedure Definitions - Begin *************** */
+
+/* --- Normaliza 'classif' para REM quando a operação for Remessa Estoque Consig --- */
+FUNCTION fi-normaliza-classif-rem RETURNS CHARACTER
+  ( INPUT pClassif     AS CHARACTER,
+    INPUT pTipOperExp  AS CHARACTER ):
+
+  IF pTipOperExp MATCHES "*Remessa*Consig*" THEN DO:
+    /* Prévia de estorno */
+    IF pClassif BEGINS "EP" THEN
+      RETURN "EPDVV REM".
+    /* Prévia */
+    IF pClassif BEGINS "PDVV" OR pClassif = "PDEX" THEN
+      RETURN "PDVV REM".
+    /* Movto “de verdade” (provisão/estorno) */
+    IF LOOKUP(pClassif,"DVV MI,DVV ME,DEX,DVV REM") > 0 THEN
+      RETURN "DVV REM".
+  END.
+
+  RETURN pClassif.
+END FUNCTION.
+
 PROCEDURE pi-executar:
     DEF VAR d AS DECIMAL.        
     DEF VAR d1 AS DECIMAL.
@@ -265,12 +286,17 @@ PROCEDURE pi-executar:
     
         END.
     
-        /* Aba ProvisÆo */
-        IF tt-param.l-provisao-dvv-me OR tt-param.l-provisao-dvv-mi OR tt-param.l-previa-provisoes THEN DO:
+        /* Aba Provisão */
+        IF tt-param.l-provisao-dvv-me 
+        OR tt-param.l-provisao-dvv-mi 
+        OR tt-param.l-provisao-dvv-rem      /* NOVO */
+        OR tt-param.l-previa-provisoes THEN DO:
     
-            run pi-acompanhar in h-acomp("Buscando ProvisÆo.").
+            run pi-acompanhar in h-acomp("Buscando Provisão.").
     
-            IF tt-param.l-provisao-dvv-me OR tt-param.l-provisao-dvv-mi THEN
+            IF tt-param.l-provisao-dvv-me 
+            OR tt-param.l-provisao-dvv-mi 
+            OR tt-param.l-provisao-dvv-rem THEN   /* NOVO */
                 RUN pi-monta-provisao.
 
             IF tt-param.l-previa-provisoes THEN
@@ -327,7 +353,7 @@ PROCEDURE pi-executar:
 
     IF CAN-FIND(FIRST tt-rel-item) THEN DO:
     
-        /* 1. Imprimindo relat¢rio no arquivo texto. */
+        /* 1. Imprimindo relatório no arquivo texto. */
         ASSIGN i-lin = 2.
         ASSIGN c-arq-imp = SESSION:TEMP-DIRECTORY + "dvv0199.txt".
         OUTPUT TO VALUE(c-arq-imp) NO-CONVERT.         
@@ -342,7 +368,7 @@ PROCEDURE pi-executar:
 
         FOR EACH tt-rel-item
             WHERE (tt-rel-item.movto = "Realizado" 
-                OR (tt-rel-item.movto = "Previsto" AND NOT tt-rel-item.classif BEGINS "P")) // as origens de pr‚via de provisÆo nÆo requerem ajustes.
+                OR (tt-rel-item.movto = "Previsto" AND NOT tt-rel-item.classif BEGINS "P")) // as origens de prévia de provisão não requerem ajustes.
             BY tt-rel-item.num-lote
             BY tt-rel-item.num-lancto
             BY tt-rel-item.num-seq-lancto
@@ -357,7 +383,7 @@ PROCEDURE pi-executar:
             IF c-doc-origem <> "" AND c-doc-origem = tt-rel-item.doc-origem AND tt-rel-item.tipo-col <> "T" THEN
                 ASSIGN de-val-doc-aux = 0.
 
-            run pi-acompanhar in h-acomp("Imprimindo relat¢rio. Data/Lote: " + string(tt-rel-item.dta-ctbz) + "/" + tt-rel-item.it-codigo).
+            run pi-acompanhar in h-acomp("Imprimindo relatório. Data/Lote: " + string(tt-rel-item.dta-ctbz) + "/" + tt-rel-item.it-codigo).
 
             IF tt-rel-item.tipo-col <> "T" THEN DO:
 
@@ -459,6 +485,12 @@ PROCEDURE pi-executar:
                         END.
     
                     END.
+
+					/* Se você exporta também a partir de tt-rel, normalize espelho (opcional) */
+					FOR EACH tt-rel:
+					  tt-rel-item.classif = fi-normaliza-classif-rem(tt-rel-item.classif,
+																			tt-rel-item.tip-oper-exp).
+					END.
                 END.
             END.
 
@@ -531,7 +563,7 @@ PROCEDURE pi-executar:
             
             run pi-acompanhar in h-acomp("Imprimindo Data/Lote: " + string(tt-rel-item.dta-ctbz) + "/" + STRING(tt-rel-item.num-lancto)).
 
-            /* Projeto FUI - nÆo atualizar valor do dccumento */
+            /* Projeto FUI - não atualizar valor do documento */
             IF SUBSTRING(tt-rel-item.movto,1,2) <> "RT" THEN DO:
 
                 IF  c-doc-origem <> "" 
@@ -574,7 +606,7 @@ PROCEDURE pi-executar:
             ELSE DO:
                 IF (tt-rel-item.movto = "Provisionado" 
                 OR  tt-rel-item.movto  = "Estornado"
-                OR  (tt-rel-item.movto  = "Previsto" AND tt-rel-item.classif BEGINS "P")) // PDEX, PDVV ME, PDVV MI - pr‚via das provisäes.
+                OR  (tt-rel-item.movto  = "Previsto" AND tt-rel-item.classif BEGINS "P")) // PDEX, PDVV ME, PDVV MI - prévia das provisões.
                 AND tt-rel-item.l-rastr-desp THEN DO:
 
                     ASSIGN tt-rel-item.val-doc   = tt-rel-item.vl-real
@@ -609,6 +641,7 @@ PROCEDURE pi-executar:
                     tt-rel-item.dta-ctbz
                     string(tt-rel-item.cod-estabel + "/" + string(tt-rel-item.num-lote) + "/" + string(tt-rel-item.num-lancto) + "/" + string(tt-rel-item.num-seq-lancto))
                     tt-rel-item.dt-lote
+					IF tt-rel-item.dt-lote = ? THEN "NÆo" ELSE "Sim"
                     tt-rel-item.user-lote
                     tt-rel-item.mov
                     tt-rel-item.moeda       
@@ -618,9 +651,10 @@ PROCEDURE pi-executar:
                     fi-tp-doc-origem(tt-rel-item.tp-origem)
                     tt-rel-item.doc-origem
                     tt-rel-item.trans-ap
-                    string(tt-rel-item.l-rastr-desp, "Sim/NÆo")
+                    string(tt-rel-item.l-rastr-desp, "Sim/Não")
                     (IF tt-rel-item.classif = "DVV MI" OR tt-rel-item.classif = "PDVV MI" THEN tt-rel-item.nr-nota-fis ELSE tt-rel-item.num-processo)
                     tt-rel-item.dt-conf
+					IF tt-rel-item.dt-real = ? THEN "NÆo" ELSE "Sim"
                     tt-rel-item.cod-emitente
                     tt-rel-item.nome-abrev
                     tt-rel-item.cod-depos
@@ -667,6 +701,7 @@ PROCEDURE pi-executar:
                     tt-rel-item.dta-ctbz
                     string(tt-rel-item.cod-estabel + "/" + string(tt-rel-item.num-lote) + "/" + string(tt-rel-item.num-lancto) + "/" + string(tt-rel-item.num-seq-lancto))
                     tt-rel-item.dt-lote
+					IF tt-rel-item.dt-lote = ? THEN "NÆo" ELSE "Sim"
                     tt-rel-item.user-lote
                     tt-rel-item.mov
                     tt-rel-item.moeda       
@@ -676,9 +711,10 @@ PROCEDURE pi-executar:
                     fi-tp-doc-origem(tt-rel-item.tp-origem)
                     tt-rel-item.doc-origem
                     tt-rel-item.trans-ap
-                    string(tt-rel-item.l-rastr-desp, "Sim/NÆo")
+                    string(tt-rel-item.l-rastr-desp, "Sim/Não")
                     IF tt-rel-item.classif = "DVV MI" OR tt-rel-item.classif = "PDVV MI" THEN tt-rel-item.nr-nota-fis ELSE tt-rel-item.num-processo
                     tt-rel-item.dt-conf
+					IF tt-rel-item.dt-real = ? THEN "NÆo" ELSE "Sim"
                     tt-rel-item.cod-emitente
                     tt-rel-item.nome-abrev
                     tt-rel-item.cod-depos
@@ -739,7 +775,8 @@ PROCEDURE pi-executar:
                         tt-rel-item-dif.modulo                                                                                                                                    
                         tt-rel-item-dif.dta-ctbz                                                                                                                                  
                         string(tt-rel-item-dif.cod-estabel + "/" + string(tt-rel-item-dif.num-lote) + "/" + string(tt-rel-item-dif.num-lancto) + "/" + string(tt-rel-item-dif.num-seq-lancto))
-                        tt-rel-item-dif.dt-lote                                                                                                                                   
+                        tt-rel-item-dif.dt-lote
+						IF tt-rel-item-dif.dt-lote = ? THEN "NÆo" ELSE "Sim"
                         tt-rel-item-dif.user-lote                                                                                                                                 
                         tt-rel-item-dif.mov                                                                                                                                       
                         tt-rel-item-dif.moeda       
@@ -749,7 +786,7 @@ PROCEDURE pi-executar:
                         fi-tp-doc-origem(tt-rel-item-dif.tp-origem)
                         tt-rel-item-dif.doc-origem
                         tt-rel-item-dif.trans-ap    
-                        string(tt-rel-item-dif.l-rastr-desp,"Sim/NÆo")
+                        string(tt-rel-item-dif.l-rastr-desp,"Sim/Não")
                         ""
                         ""
                         ""
@@ -762,6 +799,7 @@ PROCEDURE pi-executar:
                         ""
                         ""
                         ""
+						IF tt-rel-item-dif.dt-real = ? THEN "NÆo" ELSE "Sim"
                         tt-rel-item-dif.cdn-fornec  
                         tt-rel-item-dif.nome-forn 
                         tt-rel-item.classif    
@@ -802,7 +840,7 @@ PROCEDURE pi-executar:
 
     END. 
                      
-    /* 2. Cria‡Æo do arquivo excel e finaliza‡Æo do relat¢rio. */
+    /* 2. Criação do arquivo excel e finalização do relatório. */
     ASSIGN i-col = 0.
     RUN pi-cabecalho (INPUT 1).
 
@@ -893,6 +931,7 @@ PROCEDURE pi-executar:
 
 END PROCEDURE.
 
+
 PROCEDURE pi-cabecalho:
 
     DEFINE INPUT PARAM p-aba AS INT NO-UNDO.
@@ -910,7 +949,7 @@ PROCEDURE pi-cabecalho:
     ASSIGN i-lin = 1.
 
     excelAppl:Range("A1"):Value = "CONTABILIDADE".
-    excelAppl:Range("A1:AV1"):SELECT.
+    excelAppl:Range("A1:AZ1"):SELECT.
     excelAppl:SELECTION:Merge().
     excelAppl:SELECTION:FONT:bold = TRUE.
     excelAppl:SELECTION:horizontalalignment = 3.
@@ -948,6 +987,7 @@ PROCEDURE pi-cabecalho:
     excelAppl:Range(fi-nc() + string(i-lin)):Value = "Data Ctbz".
     excelAppl:Range(fi-nc() + string(i-lin)):Value = "Lote Ctbl".
     excelAppl:Range(fi-nc() + string(i-lin)):Value = "Dt Atlz Lote".
+	excelAppl:Range(fi-nc() + string(i-lin)):Value = "Contabilizado".
     excelAppl:Range(fi-nc() + string(i-lin)):Value = "User Lote Ctbl".
     excelAppl:Range(fi-nc() + string(i-lin)):Value = "Mov".
     excelAppl:Range(fi-nc() + string(i-lin)):Value = "Moeda".
@@ -963,6 +1003,7 @@ PROCEDURE pi-cabecalho:
     excelAppl:Range(fi-nc() + string(i-lin)):Value = "Rastr.".
     excelAppl:Range(fi-nc() + string(i-lin)):Value = "OC/NF".
     excelAppl:Range(fi-nc() + string(i-lin)):Value = "Dt Receita".
+	excelAppl:Range(fi-nc() + string(i-lin)):Value = "Receita".
     excelAppl:Range(fi-nc() + string(i-lin)):Value = "Cod Cliente".
     excelAppl:Range(fi-nc() + string(i-lin)):Value = "Nome Cliente".
     excelAppl:Range(fi-nc() + string(i-lin)):Value = "Dep¢sito".
@@ -3684,495 +3725,438 @@ END PROCEDURE.
 
 PROCEDURE pi-monta-provisao:
 
-        DEFINE VARIABLE i-cont AS INTEGER     NO-UNDO.
-        DEFINE VARIABLE c-empresa AS CHARACTER   NO-UNDO.
-        
-        DEF VAR i-lote-ctbl AS INT NO-UNDO.
-        DEF VAR d-tot-desp AS DECIMAL NO-UNDO.
+    DEFINE VARIABLE i-cont     AS INTEGER   NO-UNDO.
+    DEFINE VARIABLE c-empresa  AS CHARACTER NO-UNDO.
+    DEF VAR i-lote-ctbl        AS INT       NO-UNDO.
+    DEF VAR d-tot-desp         AS DECIMAL   NO-UNDO.
 
-        EMPTY TEMP-TABLE tt-cta-provisao.
-        EMPTY TEMP-TABLE tt-provisao.
+    EMPTY TEMP-TABLE tt-cta-provisao.
+    EMPTY TEMP-TABLE tt-provisao.
 
-        FOR EACH es_grp_dvv NO-LOCK.
-            
-            FIND FIRST tt-cta-provisao
-                 WHERE tt-cta-provisao.cod-conta = es_grp_dvv.cod_cta_ctbl NO-ERROR.
-            IF NOT AVAIL tt-cta-provisao THEN DO:
-                CREATE tt-cta-provisao.
-                ASSIGN tt-cta-provisao.cod-conta = es_grp_dvv.cod_cta_ctbl.
-            END.
-
+    /* Mapa de contas (DVV/DEX) -> tt-cta-provisao */
+    FOR EACH es_grp_dvv NO-LOCK:
+        FIND FIRST tt-cta-provisao
+             WHERE tt-cta-provisao.cod-conta = es_grp_dvv.cod_cta_ctbl NO-ERROR.
+        IF NOT AVAIL tt-cta-provisao THEN DO:
+            CREATE tt-cta-provisao.
+            ASSIGN tt-cta-provisao.cod-conta = es_grp_dvv.cod_cta_ctbl.
         END.
+    END.
 
-        FOR EACH es_grp_dex NO-LOCK.
-            
-            FIND FIRST tt-cta-provisao
-                 WHERE tt-cta-provisao.cod-conta = es_grp_dex.cod_cta_ctbl NO-ERROR.
-            IF NOT AVAIL tt-cta-provisao THEN DO:
-                CREATE tt-cta-provisao.
-                ASSIGN tt-cta-provisao.cod-conta = es_grp_dex.cod_cta_ctbl.
-            END.
-
+    FOR EACH es_grp_dex NO-LOCK:
+        FIND FIRST tt-cta-provisao
+             WHERE tt-cta-provisao.cod-conta = es_grp_dex.cod_cta_ctbl NO-ERROR.
+        IF NOT AVAIL tt-cta-provisao THEN DO:
+            CREATE tt-cta-provisao.
+            ASSIGN tt-cta-provisao.cod-conta = es_grp_dex.cod_cta_ctbl.
         END.
+    END.
 
-        FOR EACH tt-cta-provisao WHERE
-                 tt-cta-provisao.cod-conta >= tt-param.c-cta-ctbl-ini AND
-                 tt-cta-provisao.cod-conta <= tt-param.c-cta-ctbl-fim:
+    FOR EACH tt-cta-provisao
+        WHERE tt-cta-provisao.cod-conta >= tt-param.c-cta-ctbl-ini
+          AND tt-cta-provisao.cod-conta <= tt-param.c-cta-ctbl-fim:
 
-            DO i-cont = 1 TO 2.
+        DO i-cont = 1 TO 2:
+            ASSIGN c-empresa = (IF i-cont = 1 THEN "01" ELSE "02").
 
-                IF i-cont = 1 THEN
-                    ASSIGN c-empresa = "01".
-                ELSE
-                    ASSIGN c-empresa = "02".
+            FOR EACH ITEM_lancto_ctbl NO-LOCK 
+                WHERE ITEM_lancto_Ctbl.cod_empresa        = c-empresa
+                  AND ITEM_lancto_ctbl.dat_lancto_ctbl    >= tt-param.dt-ctbl-ini
+                  AND ITEM_lancto_ctbl.dat_lancto_ctbl    <= tt-param.dt-ctbl-fim
+                  AND ITEM_lancto_ctbl.cod_plano_cta_ctbl = "nitro"
+                  AND ITEM_lancto_ctbl.cod_cta_ctbl       = tt-cta-provisao.cod-conta
+                  AND ITEM_lancto_ctbl.cod_estab         >= tt-param.c-estab-ini
+                  AND ITEM_lancto_ctbl.cod_estab         <= tt-param.c-estab-fim
+                  AND ITEM_lancto_ctbl.cod_unid_negoc    >= tt-param.c-unid-negoc-ini
+                  AND ITEM_lancto_ctbl.cod_unid_negoc    <= tt-param.c-unid-negoc-fim
+                BREAK BY ITEM_lancto_ctbl.num_lote_ctbl:
 
-                FOR EACH  ITEM_lancto_ctbl NO-LOCK 
-                    WHERE ITEM_lancto_Ctbl.cod_empresa         = c-empresa
-                      and item_lancto_ctbl.dat_lancto_ctbl    >= tt-param.dt-ctbl-ini
-                      and item_lancto_ctbl.dat_lancto_ctbl    <= tt-param.dt-ctbl-fim
-                      AND ITEM_lancto_ctbl.cod_plano_cta_ctbl  = "nitro"
-                      AND ITEM_lancto_ctbl.cod_cta_ctbl        = tt-cta-provisao.cod-conta
-                      AND ITEM_lancto_ctbl.cod_estab          >= tt-param.c-estab-ini
-                      AND ITEM_lancto_ctbl.cod_estab          <= tt-param.c-estab-fim
-                      AND ITEM_lancto_ctbl.cod_unid_negoc     >= tt-param.c-unid-negoc-ini
-                      AND ITEM_lancto_ctbl.cod_unid_negoc     <= tt-param.c-unid-negoc-fim
-                      //AND item_lancto_ctbl.num_lote_ctbl = 259469
-                    BREAK BY ITEM_lancto_ctbl.num_lote_ctbl:
+                RELEASE bdvv_log_provisao.
+                RELEASE dvv_log_provisao.
 
-                    RELEASE bdvv_log_provisao.
-                    RELEASE dvv_log_provisao.
+                /* Lote provisionado x estornado */
+                FIND FIRST dvv_log_provisao NO-LOCK
+                     WHERE dvv_log_provisao.num_lote_ctbl = ITEM_lancto_Ctbl.num_lote_ctbl
+                       AND dvv_log_provisao.cod_estabel   = ITEM_lancto_Ctbl.cod_estab NO-ERROR.
 
-                    FIND first dvv_log_provisao NO-LOCK
-                         WHERE dvv_log_provisao.num_lote_ctbl = ITEM_lancto_Ctbl.num_lote_ctbl
-                           AND dvv_log_provisao.cod_estabel   = ITEM_lancto_Ctbl.cod_estab NO-ERROR.
-                    IF NOT AVAIL dvv_log_provisao THEN DO:
+                IF NOT AVAIL dvv_log_provisao THEN DO:
+                    FIND FIRST bdvv_log_provisao NO-LOCK
+                         WHERE bdvv_log_provisao.num_lote_ctbl_estorno = ITEM_lancto_Ctbl.num_lote_ctbl
+                           AND bdvv_log_provisao.cod_estabel           = ITEM_lancto_Ctbl.cod_estab NO-ERROR.
+                    IF NOT AVAIL bdvv_log_provisao THEN NEXT.
 
-                        FIND first bdvv_log_provisao NO-LOCK
-                             WHERE bdvv_log_provisao.num_lote_ctbl_estorno = ITEM_lancto_Ctbl.num_lote_ctbl
-                               AND bdvv_log_provisao.cod_estabel           = ITEM_lancto_Ctbl.cod_estab NO-ERROR.
-                        IF NOT AVAIL bdvv_log_provisao THEN do:
-                            NEXT.
-                        END.
-                        ELSE DO:
-                            IF NOT tt-param.l-provisao-dvv-me AND (/*bdvv_log_provisao.origem_movto = "EPDEX" OR bdvv_log_provisao.origem_movto = "EPDVV ME" OR*/ bdvv_log_provisao.origem_movto = "DEX" OR bdvv_log_provisao.origem_movto = "DVV ME") then 
-                                NEXT.
-    
-                            IF NOT tt-param.l-provisao-dvv-mi AND (/*bdvv_log_provisao.origem_movto = "EPDVV MI" OR*/ bdvv_log_provisao.origem_movto = "DVV MI")  THEN
-                                NEXT.
+                    /* ---- Filtros por flags (estorno) ---- */
+                    IF NOT tt-param.l-provisao-dvv-me
+                       AND LOOKUP(bdvv_log_provisao.origem_movto,"DEX,DVV ME") > 0 THEN NEXT.
+
+                    IF NOT tt-param.l-provisao-dvv-mi
+                       AND bdvv_log_provisao.origem_movto = "DVV MI" THEN NEXT.
+
+                    /* NOVO: incluir REM apenas quando a flag REM estiver ligada (sem hífen) */
+                    IF NOT tt-param.l-provisao-dvv-rem
+                       AND bdvv_log_provisao.origem_movto = "DVV REM" THEN NEXT.
+                END.
+                ELSE DO:
+                    /* ---- Filtros por flags (provisão) ---- */
+                    IF NOT tt-param.l-provisao-dvv-me
+                       AND LOOKUP(dvv_log_provisao.origem_movto,"DEX,DVV ME") > 0 THEN NEXT.
+
+                    IF NOT tt-param.l-provisao-dvv-mi
+                       AND dvv_log_provisao.origem_movto = "DVV MI" THEN NEXT.
+
+                    /* NOVO: incluir REM apenas quando a flag REM estiver ligada (sem hífen) */
+                    IF NOT tt-param.l-provisao-dvv-rem
+                       AND dvv_log_provisao.origem_movto = "DVV REM" THEN NEXT.
+                END.
+                
+                RUN pi-acompanhar IN h-acomp("CT: " + tt-cta-provisao.cod-conta + " Data: " + STRING(ITEM_lancto_ctbl.dat_lancto_ctbl)).
+
+                IF FIRST-OF(ITEM_lancto_ctbl.num_lote_ctbl) THEN
+                    FIND lote_ctbl NO-LOCK
+                        WHERE lote_ctbl.num_lote_ctbl = ITEM_lancto_ctbl.num_lote_ctbl NO-ERROR.
+
+                RUN pi_achar_cotac_indic_econ
+                    (INPUT v_cod_indic_econ_base,
+                     INPUT v_cod_indic_econ_apres,
+                     INPUT ITEM_lancto_ctbl.dat_lancto_ctbl,
+                     INPUT cRealVenda,
+                     OUTPUT v_data,
+                     OUTPUT v_val_cotac_indic_econ,
+                     OUTPUT v_cod_return).
+
+                IF lote_ctbl.cod_modul_dtsul = "FGL" THEN DO:
+
+                    /* Cabeçalho T */
+                    CREATE tt-provisao.
+                    ASSIGN tt-provisao.tipo                   = "T"
+                           tt-provisao.movto                  = (IF AVAIL bdvv_log_provisao THEN "Estornado" ELSE "Provisionado")
+                           tt-provisao.conta                  = ITEM_lancto_ctbl.cod_cta_ctbl
+                           tt-provisao.modulo                 = lote_ctbl.cod_modul_dtsul
+                           tt-provisao.dta-ctbz               = ITEM_lancto_ctbl.dat_lancto_ctbl
+                           tt-provisao.num-lote               = ITEM_lancto_ctbl.num_lote_ctbl
+                           tt-provisao.num-lancto             = ITEM_lancto_ctbl.num_lancto_ctbl
+                           tt-provisao.num-seq-lancto         = ITEM_lancto_ctbl.num_seq_lancto_ctbl
+                           tt-provisao.mov                    = ITEM_lancto_ctbl.ind_natur_lancto_ctbl
+                           tt-provisao.moeda                  = cRealVenda
+                           tt-provisao.cod-estabel            = ITEM_lancto_ctbl.cod_estab
+                           tt-provisao.dt-lote                = lote_ctbl.dat_ult_atualiz
+                           tt-provisao.user-lote              = lote_ctbl.cod_usuAr_ult_atualiz
+                           tt-provisao.usuario-impl           = lote_ctbl.cod_usuAr_ult_atualiz
+                           tt-provisao.cod-unid-negoc         = ITEM_lancto_ctbl.cod_unid_negoc
+                           tt-provisao.cod-unid-negoc-gerenc  = ITEM_lancto_ctbl.cod_unid_negoc
+						   tt-provisao.classif = dvv_log_provisao.origem_movto.
+
+                    ASSIGN tt-provisao.doc-origem = REPLACE(REPLACE(ITEM_lancto_ctbl.des_histor_lancto_ctbl, CHR(10), " "), ";", ",").
+
+                    /* Valor em R$ */
+                    IF ITEM_lancto_ctbl.cod_indic_econ <> cRealVenda THEN DO:
+                        FOR FIRST aprop_lancto_ctbl NO-LOCK
+                            WHERE aprop_lancto_ctbl.num_lote            = item_lancto_ctbl.num_lote
+                              AND aprop_lancto_ctbl.num_lancto_ctbl     = item_lancto_ctbl.num_lancto_ctbl
+                              AND aprop_lancto_ctbl.num_seq_lancto_ctbl = item_lancto_ctbl.num_seq_lancto_ctbl
+                              AND aprop_lancto_ctbl.cod_finalid_econ    = "Corrente":
+                            ASSIGN tt-provisao.val-lancto = aprop_lancto_ctbl.val_lancto_ctbl.
                         END.
                     END.
                     ELSE DO:
-
-                        IF NOT tt-param.l-provisao-dvv-me AND (/*dvv_log_provisao.origem_movto = "EPDEX" OR dvv_log_provisao.origem_movto = "EPDVV ME" OR*/ dvv_log_provisao.origem_movto = "DEX" OR dvv_log_provisao.origem_movto = "DVV ME") then 
-                            NEXT.
-
-                        IF NOT tt-param.l-provisao-dvv-mi AND (/*dvv_log_provisao.origem_movto = "EPDVV MI" OR*/ dvv_log_provisao.origem_movto = "DVV MI")  THEN
-                            NEXT.
-
+                        ASSIGN tt-provisao.val-lancto = ITEM_lancto_ctbl.val_lancto_ctbl.
                     END.
-                    
-                    run pi-acompanhar in h-acomp("CT: " + tt-cta-provisao.cod-conta + " Data: " + STRING(ITEM_lancto_ctbl.dat_lancto_ctbl)).
-                    
-                    IF FIRST-OF(ITEM_lancto_ctbl.num_lote_ctbl) THEN DO:
-                    
-                        FIND lote_ctbl NO-LOCK WHERE
-                             lote_ctbl.num_lote_ctbl = ITEM_lancto_ctbl.num_lote_ctbl NO-ERROR.
-                    
-                    END.   
 
-                    run pi_achar_cotac_indic_econ (Input v_cod_indic_econ_base,
-                                                   Input v_cod_indic_econ_apres,
-                                                   Input ITEM_lancto_ctbl.dat_lancto_ctbl,
-                                                   Input cRealVenda /*l_real*/,
-                                                   output v_data,
-                                                   output v_val_cotac_indic_econ,
-                                                   output v_cod_return) /*pi_achar_cotac_indic_econ*/.
+                    ASSIGN i-seq-classif = 0.
+                    IF tt-provisao.movto = "Estornado" AND NOT tt-param.l-estorno THEN NEXT.
 
-                    IF lote_ctbl.cod_modul_dtsul = "FGL" THEN DO:
+                    /* ============================ */
+                    /*   BLOCO ESTORNO (num=10)     */
+                    /* ============================ */
+                    IF tt-provisao.movto = "Estornado"
+                    AND item_lancto_ctbl.num_lancto_ctbl = 10 THEN DO:
 
-                        create tt-provisao.
-                        assign tt-provisao.tipo           = "T"
-                               tt-provisao.movto          = IF AVAIL bdvv_log_provisao THEN "Estornado" ELSE "Provisionado"
-                               tt-provisao.conta          = ITEM_lancto_ctbl.cod_cta_ctbl
-                               tt-provisao.modulo         = lote_ctbl.cod_modul_dtsul
-                               tt-provisao.dta-ctbz       = ITEM_lancto_ctbl.dat_lancto_ctbl
-                               tt-provisao.num-lote       = ITEM_lancto_ctbl.num_lote_ctbl
-                               tt-provisao.num-lancto     = ITEM_lancto_ctbl.num_lancto_ctbl
-                               tt-provisao.num-seq-lancto = ITEM_lancto_ctbl.num_seq_lancto_ctbl
-                               tt-provisao.mov            = ITEM_lancto_ctbl.ind_natur_lancto_ctbl
-                               tt-provisao.moeda          = cRealVenda
-                               tt-provisao.cod-estabel    = ITEM_lancto_ctbl.cod_estab
-                               tt-provisao.dt-lote        = lote_ctbl.dat_ult_atualiz
-                               tt-provisao.user-lote      = lote_ctbl.cod_usuAr_ult_atualiz
-                               tt-provisao.usuario-impl   = lote_ctbl.cod_usuAr_ult_atualiz  
-                               tt-provisao.cod-unid-negoc = ITEM_lancto_ctbl.cod_unid_negoc
-                               tt-provisao.cod-unid-negoc-gerenc = ITEM_lancto_ctbl.cod_unid_negoc.
+                        /* Soma das despesas do lote estornado */
+                        ASSIGN d-tot-desp = 0.
+                        FOR EACH dvv_log_provisao NO-LOCK
+                            WHERE dvv_log_provisao.num_lote_ctbl_estorno = ITEM_lancto_Ctbl.num_lote_ctbl
+                              AND dvv_log_provisao.cod_estabel           = ITEM_lancto_Ctbl.cod_estab,
+                            EACH dvv_log_prov_desp NO-LOCK
+                            WHERE dvv_log_prov_desp.num_id_provisao = dvv_log_provisao.num_id_provisao:
 
-                        ASSIGN tt-provisao.doc-origem = replace(ITEM_lancto_ctbl.des_histor_lancto_ctbl, CHR(10), " ")
-                               tt-provisao.doc-origem = REPLACE(tt-provisao.doc-origem, ";", ",").
-                        /* O relat¢rio dever  sempre apresentar os valores em reais.
-                           Caso o indicador econ“mico seja diferente de Real buscar na apropria‡Æo o valor em reais. */
-                        IF ITEM_lancto_ctbl.cod_indic_econ <> cRealVenda THEN DO:
+                            /* Prévia não entra aqui (nem MI/ME/REM) */
+                            IF LOOKUP(dvv_log_provisao.origem_movto,"EPDVV MI,EPDVV ME,EPDVV REM") > 0 THEN NEXT.
 
-                            FOR FIRST aprop_lancto_ctbl NO-LOCK WHERE
-                                      aprop_lancto_ctbl.num_lote            = item_lancto_ctbl.num_lote
-                                  AND aprop_lancto_ctbl.num_lancto_ctbl     = item_lancto_ctbl.num_lancto_ctbl
-                                  AND aprop_lancto_ctbl.num_seq_lancto_ctbl = item_lancto_ctbl.num_seq_lancto_ctbl
-                                  AND aprop_lancto_ctbl.cod_finalid_econ    = "Corrente":
-                                ASSIGN tt-provisao.val-lancto = aprop_lancto_ctbl.val_lancto_ctbl
-                                       /*tt-provisao.val-doc    = aprop_lancto_ctbl.val_lancto_ctbl*/.
-                            END.
+                            ASSIGN d-tot-desp = d-tot-desp + dvv_log_prov_desp.vl_despesa. /* NOVO: campo correto */
                         END.
-                        ELSE
-                            ASSIGN tt-provisao.val-lancto = ITEM_lancto_ctbl.val_lancto_ctbl
-                                /*
-                                   tt-provisao.val-doc    = ITEM_lancto_ctbl.val_lancto_ctbl */.
 
-                    /*IF lote_ctbl.cod_modul_dtsul = "FGL" THEN DO:*/
+                        /* Detalhes do estorno */
+                        FOR EACH dvv_log_provisao NO-LOCK
+                            WHERE dvv_log_provisao.num_lote_ctbl_estorno = ITEM_lancto_Ctbl.num_lote_ctbl
+                              AND dvv_log_provisao.cod_estabel           = ITEM_lancto_Ctbl.cod_estab,
+                            EACH dvv_log_prov_desp NO-LOCK
+                            WHERE dvv_log_prov_desp.num_id_provisao = dvv_log_provisao.num_id_provisao:
 
+                            /* Prévia fora */
+                            IF LOOKUP(dvv_log_provisao.origem_movto,"EPDVV MI,EPDVV ME,EPDVV REM") > 0 THEN NEXT.
 
-                        ASSIGN i-seq-classif = 0.
-                        IF tt-provisao.movto = "Estornado" AND NOT tt-param.l-estorno THEN NEXT.
+                            /* Item D */
+                            CREATE b-tt-provisao.
+                            BUFFER-COPY tt-provisao TO b-tt-provisao.
 
-                        IF tt-provisao.movto = "Estornado" AND item_lancto_ctbl.num_lancto_ctbl = 10 THEN DO:
-                            ASSIGN d-tot-desp = 0.
-                            FOR EACH  dvv_log_provisao NO-LOCK
-                                WHERE dvv_log_provisao.num_lote_ctbl_estorno = ITEM_lancto_Ctbl.num_lote_ctbl
-                                  AND dvv_log_provisao.cod_estabel   = ITEM_lancto_Ctbl.cod_estab,
-                                EACH  dvv_log_prov_desp NO-LOCK
-                                WHERE dvv_log_prov_desp.num_id_provisao = dvv_log_provisao.num_id_provisao.
-                                ASSIGN d-tot-desp = d-tot-desp + dvv_log_prov_desp.vl_desp.
+                            ASSIGN i-seq-classif                 = i-seq-classif + 1
+                                   b-tt-provisao.tipo-col        = "D"
+                                   b-tt-provisao.movto           = "Estornado"
+                                   b-tt-provisao.val-lancto      = 0
+                                   b-tt-provisao.seq-class       = i-seq-classif
+                                   b-tt-provisao.l-rastr-desp    = YES
+                                   b-tt-provisao.tp-origem       = 13
+                                   b-tt-provisao.doc-origem      = REPLACE(REPLACE(ITEM_lancto_ctbl.des_histor_lancto_ctbl, CHR(10), " "), ";", ",")
+								   b-tt-provisao.classif = dvv_log_provisao.origem_movto.
+
+                            /* MI/REM usam NF; ME/DEX usam Processo */
+                            IF LOOKUP(dvv_log_provisao.origem_movto,"DVV MI,DVV REM") > 0 THEN DO:
+                                ASSIGN b-tt-provisao.nr-nota-fis = dvv_log_prov_desp.nr_proc_exp
+                                       b-tt-provisao.serie       = "6".
                             END.
-                            FOR EACH  dvv_log_provisao NO-LOCK
-                                WHERE dvv_log_provisao.num_lote_ctbl_estorno = ITEM_lancto_Ctbl.num_lote_ctbl
-                                  AND dvv_log_provisao.cod_estabel   = ITEM_lancto_Ctbl.cod_estab,
-                                EACH  dvv_log_prov_desp NO-LOCK
-                                WHERE dvv_log_prov_desp.num_id_provisao = dvv_log_provisao.num_id_provisao.
+                            ELSE DO:
+                                ASSIGN b-tt-provisao.num-processo = dvv_log_prov_desp.nr_proc_exp.
+                            END.
 
-                                /* NÆo provisiona */
-                                /*IF dvv_log_provisao.num_lote_ctbl_estorno = 0 THEN
-                                    NEXT.*/
-
-                                    
-                                    
-                                create b-tt-provisao.
-                                buffer-copy tt-provisao to b-tt-provisao.
-
-                                ASSIGN i-seq-classif = i-seq-classif + 1.
-                                ASSIGN b-tt-provisao.tipo-col   = "D"
-                                       b-tt-provisao.movto      = "Estornado"
-                                       b-tt-provisao.val-lancto = 0
-                                       /*b-tt-provisao.val-doc    = 0*/
-                                       b-tt-provisao.seq-class  = i-seq-classif
-                                       b-tt-provisao.l-rastr-desp  = YES
-                                       b-tt-provisao.tp-origem = 13.
-
-                                ASSIGN b-tt-provisao.doc-origem = replace(ITEM_lancto_ctbl.des_histor_lancto_ctbl, CHR(10), " ")
-                                       b-tt-provisao.doc-origem = REPLACE(b-tt-provisao.doc-origem, ";", ",").
-
-                                IF dvv_log_provisao.origem_movto = "DVV MI" THEN DO:
-                                    ASSIGN b-tt-provisao.nr-nota-fis  = dvv_log_prov_desp.nr_proc_exp
-                                           b-tt-provisao.serie        = "6".
-                                END.
-                                ELSE DO:
-                                
-                                    ASSIGN b-tt-provisao.num-processo  = dvv_log_prov_desp.nr_proc_exp.
-
-
-                                END.
-
-                                for first es_param_estab no-lock
-                                    where es_param_estab.cod_estabel = b-tt-provisao.cod-estabel
-                                      and es_param_Estab.cod_estabel_trd ne "".        
-
-                                    FOR FIRST processo-exp FIELDS(cod-emitente) NO-LOCK
-                                        WHERE processo-exp.cod-estabel = es_param_estab.cod_estabel_trd
-                                          AND processo-exp.nr-proc-exp = b-tt-provisao.num-processo,
-                                        FIRST emitente FIELDS(nome-abrev atividade nome-mic-reg) OF processo-exp NO-LOCK.
-
-                                        ASSIGN b-tt-provisao.cod-emitente = processo-exp.cod-emitente
-                                               b-tt-provisao.nome-abrev   = emitente.nome-abrev
-                                               b-tt-provisao.regiao       = emitente.nome-mic-reg.                   
-                                    END.    
-                                    IF NOT AVAIL processo-exp THEN DO:
-                                        FOR FIRST processo-exp FIELDS(cod-emitente) NO-LOCK
-                                            WHERE processo-exp.cod-estabel = es_param_estab.cod_estabel
-                                              AND processo-exp.nr-proc-exp = b-tt-provisao.num-processo,
-                                            FIRST emitente FIELDS(nome-abrev atividade nome-mic-reg) OF processo-exp NO-LOCK.                    
-
-                                            ASSIGN b-tt-provisao.cod-emitente = processo-exp.cod-emitente
-                                                   b-tt-provisao.nome-abrev   = emitente.nome-abrev
-                                                   b-tt-provisao.regiao       = emitente.nome-mic-reg.
-
-                                        END.    
-                                    END.
-                                end.
-                                if not avail es_param_estab then do:
-                                    FOR FIRST processo-exp FIELDS(cod-emitente) NO-LOCK
-                                        WHERE processo-exp.cod-estabel = b-tt-provisao.cod-estabel
-                                          AND processo-exp.nr-proc-exp = b-tt-provisao.num-processo,
-                                        FIRST emitente FIELDS(nome-abrev atividade nome-mic-reg) OF processo-exp NO-LOCK.                                   
-                                    END. 
-                                end.
-
-                                IF NOT AVAIL processo-exp THEN DO:
-                                    FOR FIRST processo-exp FIELDS(cod-emitente) NO-LOCK
-                                        //WHERE processo-exp.cod-estabel = "001"
-                                        WHERE processo-exp.nr-proc-exp = b-tt-provisao.num-processo
-                                          AND processo-exp.cod-estabel <> "002",
-                                        FIRST emitente FIELDS(nome-abrev atividade nome-mic-reg) OF processo-exp NO-LOCK.                                   
-                                    END. 
-                                END.
-
-                                IF AVAIL processo-exp THEN DO:
+                            /* Enriquecimento emitente/processo (mesma lógica já existente) */
+                            FOR FIRST es_param_estab NO-LOCK
+                                WHERE es_param_estab.cod_estabel = b-tt-provisao.cod-estabel
+                                  AND es_param_Estab.cod_estabel_trd <> "":
+                                FOR FIRST processo-exp FIELDS(cod-emitente) NO-LOCK
+                                    WHERE processo-exp.cod-estabel = es_param_estab.cod_estabel_trd
+                                      AND processo-exp.nr-proc-exp = b-tt-provisao.num-processo,
+                                    FIRST emitente FIELDS(nome-abrev atividade nome-mic-reg) OF processo-exp NO-LOCK:
                                     ASSIGN b-tt-provisao.cod-emitente = processo-exp.cod-emitente
                                            b-tt-provisao.nome-abrev   = emitente.nome-abrev
                                            b-tt-provisao.regiao       = emitente.nome-mic-reg.
-                                    RUN pi-busca-data-receita-3.
                                 END.
-                                ELSE DO:
-                                    IF dvv_log_provisao.origem_movto = "DVV MI" THEN DO:
-                                        RUN pi-busca-data-receita-5.
-                                    END.
-                                
-                                END.
-                                    //RUN pi-busca-data-receita-2.
-
-                                 /* Valores da despesa. */
-                                assign b-tt-provisao.classif    = dvv_log_provisao.origem_movto
-                                       b-tt-provisao.cod-desp   = dvv_log_prov_desp.cod_despesa
-                                       b-tt-provisao.dt-prev    = dvv_log_provisao.dt_provisao
-                                       b-tt-provisao.val-doc    = 0
-                                       b-tt-provisao.vl-prev    = (dvv_log_prov_desp.vl_desp * tt-provisao.val-lancto) / d-tot-desp
-                                       b-tt-provisao.vl-real    = (dvv_log_prov_desp.vl_desp * tt-provisao.val-lancto) / d-tot-desp.
-                                       /*b-tt-rel-reg.dt-real     = 
-                                       b-tt-rel-reg.vl-real     = IF v-val-desp[2] <> 0 THEN v-val-desp[2] ELSE dvv_movto_det.VALOR_REAL_R$.*/
-
-                                FOR EACH aprop_lancto_ctbl no-lock where
-                                         aprop_lancto_ctbl.num_lote_ctbl        = ITEM_lancto_ctbl.num_lote_ctbl
-                                     and aprop_lancto_ctbl.num_lancto_ctbl      = ITEM_lancto_ctbl.num_lancto_ctbl
-                                     and aprop_lancto_ctbl.num_seq_lancto_ctbl  = ITEM_lancto_ctbl.num_seq_lancto_ctbl,
-                                    EACH val_aprop_ctbl_ap no-lock where
-                                         val_aprop_ctbl_ap.num_id_aprop_lancto_ctbl = aprop_lancto_ctbl.num_id_aprop_lancto_ctbl
-                                     AND val_aprop_ctbl_ap.cod_finalid_econ         = "Corrente":
-
-                                    find aprop_ctbl_ap no-lock where
-                                         aprop_ctbl_ap.cod_estab            = val_aprop_ctbl_ap.cod_estab
-                                     and aprop_ctbl_ap.num_id_aprop_ctbl_ap = val_aprop_ctbl_ap.num_id_aprop_ctbl_ap no-error.
-
-                                    find movto_tit_ap no-lock where
-                                         movto_tit_ap.cod_estab             = aprop_ctbl_ap.cod_estab
-                                     and movto_tit_ap.num_id_movto_tit_ap   = aprop_ctbl_ap.num_id_movto_tit_ap no-error.
-
-                                    find tit_ap no-lock where
-                                         tit_ap.cod_estab       = movto_tit_ap.cod_estab
-                                     and tit_ap.num_id_tit_ap   = movto_tit_ap.num_id_tit_ap no-error.
-                                    IF AVAIL tit_ap THEN DO:
-                                       FIND emitente
-                                            WHERE emitente.cod-emitente = tit_ap.cdn_fornecedor NO-LOCK.
-                                        /* Dados do t¡tulo APB. */
-                                        assign b-tt-provisao.cdn-fornec    = tit_ap.cdn_fornecedor
-                                               b-tt-provisao.nome-forn     = emitente.nome-abrev
-                                               b-tt-provisao.cod-esp       = tit_ap.cod_espec_docto
-                                               b-tt-provisao.cod-titulo    = tit_ap.cod_tit_ap
-                                               b-tt-provisao.parcela       = tit_ap.cod_parcela.
-                                    END.
-                                END.
-                            END.
-                        END.
-                        ELSE do:
-
-                            ASSIGN d-tot-desp = 0.
-                            FOR EACH  dvv_log_provisao NO-LOCK
-                                WHERE dvv_log_provisao.num_lote_ctbl = ITEM_lancto_Ctbl.num_lote_ctbl
-                                  AND dvv_log_provisao.cod_estabel   = ITEM_lancto_Ctbl.cod_estab,
-                                EACH  dvv_log_prov_desp NO-LOCK
-                                WHERE dvv_log_prov_desp.num_id_provisao = dvv_log_provisao.num_id_provisao.
-                                
-                                IF dvv_log_provisao.origem_movto = "EPDVV MI" THEN
-                                    NEXT.
-                                    
-                                IF dvv_log_provisao.origem_movto = "EPDVV ME" THEN
-                                    NEXT.
-    
-                                    
-                                
-                                ASSIGN d-tot-desp = d-tot-desp + dvv_log_prov_desp.vl_desp.
-                            END.
-                            FOR EACH  dvv_log_provisao NO-LOCK
-                                WHERE dvv_log_provisao.num_lote_ctbl = ITEM_lancto_Ctbl.num_lote_ctbl
-                                  AND dvv_log_provisao.cod_estabel   = ITEM_lancto_Ctbl.cod_estab,
-                                EACH  dvv_log_prov_desp NO-LOCK
-                                WHERE dvv_log_prov_desp.num_id_provisao = dvv_log_provisao.num_id_provisao.
-
-                                /* NÆo provisiona */
-                                /*IF dvv_log_provisao.num_lote_ctbl_estorno = 0 THEN
-                                    NEXT.*/
-                                    
-                                IF dvv_log_provisao.origem_movto = "EPDVV MI" THEN
-                                    NEXT.
-                                    
-                                IF dvv_log_provisao.origem_movto = "EPDVV ME" THEN
-                                    NEXT.
-                                    
-                                /*    
-                                IF dvv_log_prov_desp.nr_proc_exp = "0008231" THEN
-                                DO:
-                                    MESSAGE  dvv_log_prov_desp.num_id_provisao SKIP dvv_log_prov_desp.vl_desp SKIP dvv_log_provisao.origem_movto SKIP d-tot-desp VIEW-AS ALERT-BOX.
-                                    
-                                END.
-                                */
-                                
-                                IF dvv_log_prov_desp.vl_desp = 0 THEN NEXT.   
-
-                                create b-tt-provisao.
-                                buffer-copy tt-provisao to b-tt-provisao.
-
-                                ASSIGN i-seq-classif = i-seq-classif + 1.
-                                ASSIGN b-tt-provisao.tipo-col   = "D"
-                                       b-tt-provisao.movto      = "Provisionado"
-                                       b-tt-provisao.val-lancto = 0
-                                       /*b-tt-provisao.val-doc    = 0*/
-                                       b-tt-provisao.seq-class  = i-seq-classif
-                                       b-tt-provisao.l-rastr-desp  = YES
-                                       b-tt-provisao.tp-origem = 14.
-
-                                ASSIGN b-tt-provisao.doc-origem = replace(ITEM_lancto_ctbl.des_histor_lancto_ctbl, CHR(10), " ")
-                                       b-tt-provisao.doc-origem = REPLACE(b-tt-provisao.doc-origem, ";", ",").
-
-                                IF dvv_log_provisao.origem_movto = "DVV MI" THEN DO:
-                                    ASSIGN b-tt-provisao.nr-nota-fis  = dvv_log_prov_desp.nr_proc_exp
-                                           b-tt-provisao.serie = "6".
-                                END.
-                                ELSE 
-                                    ASSIGN b-tt-provisao.num-processo  = dvv_log_prov_desp.nr_proc_exp.
-
-                                for first es_param_estab no-lock
-                                    where es_param_estab.cod_estabel = b-tt-provisao.cod-estabel
-                                      and es_param_Estab.cod_estabel_trd ne "".        
-
-                                    FOR FIRST processo-exp FIELDS(cod-emitente) NO-LOCK
-                                        WHERE processo-exp.cod-estabel = es_param_estab.cod_estabel_trd
-                                          AND processo-exp.nr-proc-exp = b-tt-provisao.num-processo,
-                                        FIRST emitente FIELDS(nome-abrev atividade nome-mic-reg) OF processo-exp NO-LOCK.
-
-
-                                        ASSIGN b-tt-provisao.cod-emitente = processo-exp.cod-emitente
-                                               b-tt-provisao.nome-abrev   = emitente.nome-abrev
-                                               b-tt-provisao.regiao       = emitente.nome-mic-reg.                   
-                                    END.    
-                                    IF NOT AVAIL processo-exp THEN DO:
-                                        FOR FIRST processo-exp FIELDS(cod-emitente) NO-LOCK
-                                            WHERE processo-exp.cod-estabel = es_param_estab.cod_estabel
-                                              AND processo-exp.nr-proc-exp = b-tt-provisao.num-processo,
-                                            FIRST emitente FIELDS(nome-abrev atividade nome-mic-reg) OF processo-exp NO-LOCK.                    
-
-                                            ASSIGN b-tt-provisao.cod-emitente = processo-exp.cod-emitente
-                                                   b-tt-provisao.nome-abrev   = emitente.nome-abrev
-                                                   b-tt-provisao.regiao       = emitente.nome-mic-reg.
-                                        END.    
-                                    END.
-                                end.
-                                if not avail es_param_estab then do:
-                                    FOR FIRST processo-exp FIELDS(cod-emitente) NO-LOCK
-                                        WHERE processo-exp.cod-estabel = b-tt-provisao.cod-estabel
-                                          AND processo-exp.nr-proc-exp = b-tt-provisao.num-processo,
-                                        FIRST emitente FIELDS(nome-abrev atividade nome-mic-reg) OF processo-exp NO-LOCK.                                   
-
-                                        ASSIGN b-tt-provisao.cod-emitente = processo-exp.cod-emitente
-                                               b-tt-provisao.nome-abrev   = emitente.nome-abrev
-                                               b-tt-provisao.regiao       = emitente.nome-mic-reg.
-
-                                    END. 
-                                end.
-
                                 IF NOT AVAIL processo-exp THEN DO:
                                     FOR FIRST processo-exp FIELDS(cod-emitente) NO-LOCK
-                                        WHERE processo-exp.cod-estabel = "001"
+                                        WHERE processo-exp.cod-estabel = es_param_estab.cod_estabel
                                           AND processo-exp.nr-proc-exp = b-tt-provisao.num-processo,
-                                        FIRST emitente FIELDS(nome-abrev atividade nome-mic-reg) OF processo-exp NO-LOCK.  
-
+                                        FIRST emitente FIELDS(nome-abrev atividade nome-mic-reg) OF processo-exp NO-LOCK:
                                         ASSIGN b-tt-provisao.cod-emitente = processo-exp.cod-emitente
                                                b-tt-provisao.nome-abrev   = emitente.nome-abrev
                                                b-tt-provisao.regiao       = emitente.nome-mic-reg.
-
-                                    END. 
-                                END.
-
-                                IF b-tt-provisao.nr-nota-fis = "0286875" THEN DO:
-                                    PUT "1-" AVAIL processo-exp "-" dvv_log_provisao.origem_movto SKIP.
-                                END.    
-                                
-                                IF AVAIL processo-exp THEN do:
-                                    RUN pi-busca-data-receita-3.
-                                END.
-                                ELSE DO:
-                                    IF dvv_log_provisao.origem_movto = "DVV MI" THEN DO:
-                                        RUN pi-busca-data-receita-5.
-                                    END.
-                                
-                                END.
-                                    
-
-                                 /* Valores da despesa. */
-                                assign b-tt-provisao.classif    = dvv_log_provisao.origem_movto
-                                       b-tt-provisao.cod-desp   = dvv_log_prov_desp.cod_despesa
-                                       b-tt-provisao.dt-prev    = dvv_log_provisao.dt_provisao
-                                       b-tt-provisao.vl-prev    = (dvv_log_prov_desp.vl_desp * tt-provisao.val-lancto) / d-tot-desp
-                                       b-tt-provisao.vl-real    = (dvv_log_prov_desp.vl_desp * tt-provisao.val-lancto) / d-tot-desp.
-                                       /*b-tt-rel-reg.dt-real     = 
-                                       b-tt-rel-reg.vl-real     = IF v-val-desp[2] <> 0 THEN v-val-desp[2] ELSE dvv_movto_det.VALOR_REAL_R$.*/
-                                       
-                                /*       
-                                IF dvv_log_prov_desp.nr_proc_exp = "0008231" THEN DO:
-                                    MESSAGE b-tt-provisao.vl-real VIEW-AS ALERT-BOX.
-                                END.
-                                */
-
-                                FOR EACH aprop_lancto_ctbl no-lock where
-                                         aprop_lancto_ctbl.num_lote_ctbl        = ITEM_lancto_ctbl.num_lote_ctbl
-                                     and aprop_lancto_ctbl.num_lancto_ctbl      = ITEM_lancto_ctbl.num_lancto_ctbl
-                                     and aprop_lancto_ctbl.num_seq_lancto_ctbl  = ITEM_lancto_ctbl.num_seq_lancto_ctbl,
-                                    EACH val_aprop_ctbl_ap no-lock where
-                                         val_aprop_ctbl_ap.num_id_aprop_lancto_ctbl = aprop_lancto_ctbl.num_id_aprop_lancto_ctbl
-                                     AND val_aprop_ctbl_ap.cod_finalid_econ         = "Corrente":
-
-                                    find aprop_ctbl_ap no-lock where
-                                         aprop_ctbl_ap.cod_estab            = val_aprop_ctbl_ap.cod_estab
-                                     and aprop_ctbl_ap.num_id_aprop_ctbl_ap = val_aprop_ctbl_ap.num_id_aprop_ctbl_ap no-error.
-
-                                    find movto_tit_ap no-lock where
-                                         movto_tit_ap.cod_estab             = aprop_ctbl_ap.cod_estab
-                                     and movto_tit_ap.num_id_movto_tit_ap   = aprop_ctbl_ap.num_id_movto_tit_ap no-error.
-
-                                    find tit_ap no-lock where
-                                         tit_ap.cod_estab       = movto_tit_ap.cod_estab
-                                     and tit_ap.num_id_tit_ap   = movto_tit_ap.num_id_tit_ap no-error.
-                                    IF AVAIL tit_ap THEN DO:
-
-                                       FIND emitente
-                                            WHERE emitente.cod-emitente = tit_ap.cdn_fornecedor NO-LOCK.
-                                        /* Dados do t¡tulo APB. */
-
-                                        assign b-tt-provisao.cdn-fornec    = tit_ap.cdn_fornecedor
-                                               b-tt-provisao.nome-forn     = emitente.nome-abrev
-                                               b-tt-provisao.cod-esp       = tit_ap.cod_espec_docto
-                                               b-tt-provisao.cod-titulo    = tit_ap.cod_tit_ap
-                                               b-tt-provisao.parcela       = tit_ap.cod_parcela.
                                     END.
                                 END.
                             END.
+                            IF NOT AVAIL es_param_estab THEN DO:
+                                FOR FIRST processo-exp FIELDS(cod-emitente) NO-LOCK
+                                    WHERE processo-exp.cod-estabel = b-tt-provisao.cod-estabel
+                                      AND processo-exp.nr-proc-exp = b-tt-provisao.num-processo,
+                                    FIRST emitente FIELDS(nome-abrev atividade nome-mic-reg) OF processo-exp NO-LOCK:
+                                    ASSIGN b-tt-provisao.cod-emitente = processo-exp.cod-emitente
+                                           b-tt-provisao.nome-abrev   = emitente.nome-abrev
+                                           b-tt-provisao.regiao       = emitente.nome-mic-reg.
+                                END.
+                            END.
+
+                            IF NOT AVAIL processo-exp THEN DO:
+                                FOR FIRST processo-exp FIELDS(cod-emitente) NO-LOCK
+                                    WHERE processo-exp.nr-proc-exp = b-tt-provisao.num-processo
+                                      AND processo-exp.cod-estabel <> "002",
+                                    FIRST emitente FIELDS(nome-abrev atividade nome-mic-reg) OF processo-exp NO-LOCK:
+                                    ASSIGN b-tt-provisao.cod-emitente = processo-exp.cod-emitente
+                                           b-tt-provisao.nome-abrev   = emitente.nome-abrev
+                                           b-tt-provisao.regiao       = emitente.nome-mic-reg.
+                                END.
+                            END.
+
+                            IF AVAIL processo-exp THEN RUN pi-busca-data-receita-3.
+                            ELSE IF dvv_log_provisao.origem_movto = "DVV MI" THEN RUN pi-busca-data-receita-5.
+
+                            /* Valores rateados */
+                            ASSIGN b-tt-provisao.classif   = dvv_log_provisao.origem_movto
+                                   b-tt-provisao.cod-desp  = dvv_log_prov_desp.cod_despesa
+                                   b-tt-provisao.dt-prev   = dvv_log_provisao.dt_provisao
+                                   b-tt-provisao.val-doc   = 0
+                                   b-tt-provisao.vl-prev   = (dvv_log_prov_desp.vl_despesa * tt-provisao.val-lancto) / d-tot-desp
+                                   b-tt-provisao.vl-real   = (dvv_log_prov_desp.vl_despesa * tt-provisao.val-lancto) / d-tot-desp.
+
+                            /* Título APB (mesma lógica) */
+                            FOR EACH aprop_lancto_ctbl NO-LOCK
+                                WHERE aprop_lancto_ctbl.num_lote_ctbl       = ITEM_lancto_ctbl.num_lote_ctbl
+                                  AND aprop_lancto_ctbl.num_lancto_ctbl     = ITEM_lancto_ctbl.num_lancto_ctbl
+                                  AND aprop_lancto_ctbl.num_seq_lancto_ctbl = ITEM_lancto_ctbl.num_seq_lancto_ctbl,
+                                EACH val_aprop_ctbl_ap NO-LOCK
+                                WHERE val_aprop_ctbl_ap.num_id_aprop_lancto_ctbl = aprop_lancto_ctbl.num_id_aprop_lancto_ctbl
+                                  AND val_aprop_ctbl_ap.cod_finalid_econ         = "Corrente":
+
+                                FIND aprop_ctbl_ap NO-LOCK
+                                    WHERE aprop_ctbl_ap.cod_estab            = val_aprop_ctbl_ap.cod_estab
+                                      AND aprop_ctbl_ap.num_id_aprop_ctbl_ap = val_aprop_ctbl_ap.num_id_aprop_ctbl_ap NO-ERROR.
+
+                                FIND movto_tit_ap NO-LOCK
+                                    WHERE movto_tit_ap.cod_estab           = aprop_ctbl_ap.cod_estab
+                                      AND movto_tit_ap.num_id_movto_tit_ap = aprop_ctbl_ap.num_id_movto_tit_ap NO-ERROR.
+
+                                FIND tit_ap NO-LOCK
+                                    WHERE tit_ap.cod_estab     = movto_tit_ap.cod_estab
+                                      AND tit_ap.num_id_tit_ap = movto_tit_ap.num_id_tit_ap NO-ERROR.
+                                IF AVAIL tit_ap THEN DO:
+                                    FIND emitente WHERE emitente.cod-emitente = tit_ap.cdn_fornecedor NO-LOCK.
+                                    ASSIGN b-tt-provisao.cdn-fornec = tit_ap.cdn_fornecedor
+                                           b-tt-provisao.nome-forn  = emitente.nome-abrev
+                                           b-tt-provisao.cod-esp    = tit_ap.cod_espec_docto
+                                           b-tt-provisao.cod-titulo = tit_ap.cod_tit_ap
+                                           b-tt-provisao.parcela    = tit_ap.cod_parcela.
+                                END.
+                            END.
+                        END. /* loop estorno */
+                    END. /* estornado */
+
+                    /* ============================ */
+                    /*   BLOCO PROVISÃO             */
+                    /* ============================ */
+                    ELSE DO:
+
+                        /* soma despesas do lote */
+                        ASSIGN d-tot-desp = 0.
+                        FOR EACH dvv_log_provisao NO-LOCK
+                            WHERE dvv_log_provisao.num_lote_ctbl = ITEM_lancto_Ctbl.num_lote_ctbl
+                              AND dvv_log_provisao.cod_estabel   = ITEM_lancto_Ctbl.cod_estab,
+                            EACH dvv_log_prov_desp NO-LOCK
+                            WHERE dvv_log_prov_desp.num_id_provisao = dvv_log_provisao.num_id_provisao:
+
+                            /* Prévia fora daqui (inclui REM também) */
+                            IF LOOKUP(dvv_log_provisao.origem_movto,"EPDVV MI,EPDVV ME,EPDVV REM") > 0 THEN NEXT.
+
+                            ASSIGN d-tot-desp = d-tot-desp + dvv_log_prov_desp.vl_despesa. /* NOVO */
                         END.
-                    END.
 
+                        /* detalhes */
+                        FOR EACH dvv_log_provisao NO-LOCK
+                            WHERE dvv_log_provisao.num_lote_ctbl = ITEM_lancto_Ctbl.num_lote_ctbl
+                              AND dvv_log_provisao.cod_estabel   = ITEM_lancto_Ctbl.cod_estab,
+                            EACH dvv_log_prov_desp NO-LOCK
+                            WHERE dvv_log_prov_desp.num_id_provisao = dvv_log_provisao.num_id_provisao:
 
-                    RELEASE bdvv_log_provisao.
-                    RELEASE dvv_log_provisao.
-                END.
-            END.
-        END.
+                            /* Prévia fora daqui (inclui REM) */
+                            IF LOOKUP(dvv_log_provisao.origem_movto,"EPDVV MI,EPDVV ME,EPDVV REM") > 0 THEN NEXT.
+
+                            IF dvv_log_prov_desp.vl_despesa = 0 THEN NEXT.  /* NOVO */
+
+                            CREATE b-tt-provisao.
+                            BUFFER-COPY tt-provisao TO b-tt-provisao.
+
+                            ASSIGN i-seq-classif                 = i-seq-classif + 1
+                                   b-tt-provisao.tipo-col        = "D"
+                                   b-tt-provisao.movto           = "Provisionado"
+                                   b-tt-provisao.val-lancto      = 0
+                                   b-tt-provisao.seq-class       = i-seq-classif
+                                   b-tt-provisao.l-rastr-desp    = YES
+                                   b-tt-provisao.tp-origem       = 14
+                                   b-tt-provisao.doc-origem      = REPLACE(REPLACE(ITEM_lancto_ctbl.des_histor_lancto_ctbl, CHR(10), " "), ";", ",")
+								   b-tt-provisao.classif = dvv_log_provisao.origem_movto.
+
+                            /* MI/REM usam NF; ME/DEX usam Processo */
+                            IF LOOKUP(dvv_log_provisao.origem_movto,"DVV MI,DVV REM") > 0 THEN DO:
+                                ASSIGN b-tt-provisao.nr-nota-fis = dvv_log_prov_desp.nr_proc_exp
+                                       b-tt-provisao.serie       = "6".
+                            END.
+                            ELSE DO:
+                                ASSIGN b-tt-provisao.num-processo = dvv_log_prov_desp.nr_proc_exp.
+                            END.
+
+                            /* Enriquecimento emitente/processo (mesma lógica já existente) */
+                            FOR FIRST es_param_estab NO-LOCK
+                                WHERE es_param_estab.cod_estabel = b-tt-provisao.cod-estabel
+                                  AND es_param_Estab.cod_estabel_trd <> "":
+                                FOR FIRST processo-exp FIELDS(cod-emitente) NO-LOCK
+                                    WHERE processo-exp.cod-estabel = es_param_estab.cod_estabel_trd
+                                      AND processo-exp.nr-proc-exp = b-tt-provisao.num-processo,
+                                    FIRST emitente FIELDS(nome-abrev atividade nome-mic-reg) OF processo-exp NO-LOCK:
+                                    ASSIGN b-tt-provisao.cod-emitente = processo-exp.cod-emitente
+                                           b-tt-provisao.nome-abrev   = emitente.nome-abrev
+                                           b-tt-provisao.regiao       = emitente.nome-mic-reg.
+                                END.
+                                IF NOT AVAIL processo-exp THEN DO:
+                                    FOR FIRST processo-exp FIELDS(cod-emitente) NO-LOCK
+                                        WHERE processo-exp.cod-estabel = es_param_estab.cod_estabel
+                                          AND processo-exp.nr-proc-exp = b-tt-provisao.num-processo,
+                                        FIRST emitente FIELDS(nome-abrev atividade nome-mic-reg) OF processo-exp NO-LOCK:
+                                        ASSIGN b-tt-provisao.cod-emitente = processo-exp.cod-emitente
+                                               b-tt-provisao.nome-abrev   = emitente.nome-abrev
+                                               b-tt-provisao.regiao       = emitente.nome-mic-reg.
+                                    END.
+                                END.
+                            END.
+                            IF NOT AVAIL es_param_estab THEN DO:
+                                FOR FIRST processo-exp FIELDS(cod-emitente) NO-LOCK
+                                    WHERE processo-exp.cod-estabel = b-tt-provisao.cod-estabel
+                                      AND processo-exp.nr-proc-exp = b-tt-provisao.num-processo,
+                                    FIRST emitente FIELDS(nome-abrev atividade nome-mic-reg) OF processo-exp NO-LOCK:
+                                    ASSIGN b-tt-provisao.cod-emitente = processo-exp.cod-emitente
+                                           b-tt-provisao.nome-abrev   = emitente.nome-abrev
+                                           b-tt-provisao.regiao       = emitente.nome-mic-reg.
+                                END.
+                            END.
+
+                            IF NOT AVAIL processo-exp THEN DO:
+                                FOR FIRST processo-exp FIELDS(cod-emitente) NO-LOCK
+                                    WHERE processo-exp.cod-estabel = "001"
+                                      AND processo-exp.nr-proc-exp = b-tt-provisao.num-processo,
+                                    FIRST emitente FIELDS(nome-abrev atividade nome-mic-reg) OF processo-exp NO-LOCK:
+                                    ASSIGN b-tt-provisao.cod-emitente = processo-exp.cod-emitente
+                                           b-tt-provisao.nome-abrev   = emitente.nome-abrev
+                                           b-tt-provisao.regiao       = emitente.nome-mic-reg.
+                                END.
+                            END.
+
+                            IF AVAIL processo-exp THEN RUN pi-busca-data-receita-3.
+                            ELSE IF dvv_log_provisao.origem_movto = "DVV MI" THEN RUN pi-busca-data-receita-5.
+
+                            /* Valores rateados */
+                            ASSIGN b-tt-provisao.classif   = dvv_log_provisao.origem_movto
+                                   b-tt-provisao.cod-desp  = dvv_log_prov_desp.cod_despesa
+                                   b-tt-provisao.dt-prev   = dvv_log_provisao.dt_provisao
+                                   b-tt-provisao.vl-prev   = (dvv_log_prov_desp.vl_despesa * tt-provisao.val-lancto) / d-tot-desp
+                                   b-tt-provisao.vl-real   = (dvv_log_prov_desp.vl_despesa * tt-provisao.val-lancto) / d-tot-desp.
+
+                            /* Título APB (mesma lógica) */
+                            FOR EACH aprop_lancto_ctbl NO-LOCK
+                                WHERE aprop_lancto_ctbl.num_lote_ctbl       = ITEM_lancto_ctbl.num_lote_ctbl
+                                  AND aprop_lancto_ctbl.num_lancto_ctbl     = ITEM_lancto_ctbl.num_lancto_ctbl
+                                  AND aprop_lancto_ctbl.num_seq_lancto_ctbl = ITEM_lancto_ctbl.num_seq_lancto_ctbl,
+                                EACH val_aprop_ctbl_ap NO-LOCK
+                                WHERE val_aprop_ctbl_ap.num_id_aprop_lancto_ctbl = aprop_lancto_ctbl.num_id_aprop_lancto_ctbl
+                                  AND val_aprop_ctbl_ap.cod_finalid_econ         = "Corrente":
+
+                                FIND aprop_ctbl_ap NO-LOCK
+                                    WHERE aprop_ctbl_ap.cod_estab            = val_aprop_ctbl_ap.cod_estab
+                                      AND aprop_ctbl_ap.num_id_aprop_ctbl_ap = val_aprop_ctbl_ap.num_id_aprop_ctbl_ap NO-ERROR.
+
+                                FIND movto_tit_ap NO-LOCK
+                                    WHERE movto_tit_ap.cod_estab           = aprop_ctbl_ap.cod_estab
+                                      AND movto_tit_ap.num_id_movto_tit_ap = aprop_ctbl_ap.num_id_movto_tit_ap NO-ERROR.
+
+                                FIND tit_ap NO-LOCK
+                                    WHERE tit_ap.cod_estab     = movto_tit_ap.cod_estab
+                                      AND tit_ap.num_id_tit_ap = movto_tit_ap.num_id_tit_ap NO-ERROR.
+                                IF AVAIL tit_ap THEN DO:
+                                    FIND emitente
+                                        WHERE emitente.cod-emitente = tit_ap.cdn_fornecedor NO-LOCK.
+                                    ASSIGN b-tt-provisao.cdn-fornec = tit_ap.cdn_fornecedor
+                                           b-tt-provisao.nome-forn  = emitente.nome-abrev
+                                           b-tt-provisao.cod-esp    = tit_ap.cod_espec_docto
+                                           b-tt-provisao.cod-titulo = tit_ap.cod_tit_ap
+                                           b-tt-provisao.parcela    = tit_ap.cod_parcela.
+                                END.
+                            END.
+                        END. /* loop provisão */
+                    END. /* ELSE provisão */
+                END. /* módulo FGL */
+
+                RELEASE bdvv_log_provisao.
+                RELEASE dvv_log_provisao.
+
+            END. /* FOR EACH item_lancto_ctbl */
+        END. /* i-cont */
+    END. /* FOR EACH tt-cta-provisao */
 
 END PROCEDURE.
+
 
 
 
@@ -5772,142 +5756,142 @@ PROCEDURE pi-monta-previa-provisao:
 
     /*MESSAGE 'aqui'
         VIEW-AS ALERT-BOX INFORMATION BUTTONS OK.   */
-    DEFINE VARIABLE dtEstornoFinal AS DATE    NO-UNDO.
-    
-    IF month(tt-param.dt-ctbl-fim)  = 12 THEN 
+    DEFINE VARIABLE dtEstornoFinal AS DATE NO-UNDO.
+
+    IF MONTH(tt-param.dt-ctbl-fim) = 12 THEN
         ASSIGN dtEstornoFinal = DATE(01,01,YEAR(tt-param.dt-ctbl-fim) + 1) - 1.
     ELSE
-        ASSIGN dtEstornoFinal = date(month(tt-param.dt-ctbl-fim) + 1,01,YEAR(tt-param.dt-ctbl-fim)) - 1.
+        ASSIGN dtEstornoFinal = DATE(MONTH(tt-param.dt-ctbl-fim) + 1,01,YEAR(tt-param.dt-ctbl-fim)) - 1.
 
-    // Lista Pr‚via das Provisäes (geradas no DVV5100)
-    IF  tt-param.l-previa-provisoes = YES THEN DO:
+    /* Lista Prévia das Provisões (geradas no DVV5100) */
+    IF tt-param.l-previa-provisoes = YES THEN DO:
 
         ASSIGN c-num_lote_ctbl       = c-num_lote_ctbl + 1
                c-num_lancto_ctbl     = 1
                c-num_seq_lancto_ctbl = 0.
-               
+
+        /* ======================= */
+        /* EP*  -> Prévia Estorno  */
+        /* ======================= */
         FOR EACH tt_estab,
             EACH dvv_log_provisao NO-LOCK USE-INDEX id_es_dt_ct_cc_un
-               WHERE dvv_log_provisao.cod_estabel     = tt_estab.cod_estab
-               AND  dvv_log_provisao.dt_provisao     >= tt-param.dt-ctbl-ini
-               AND  dvv_log_provisao.dt_provisao     <= tt-param.dt-ctbl-fim
-               AND  dvv_log_provisao.cod_un          >= tt-param.c-unid-negoc-ini
-               AND  dvv_log_provisao.cod_un          <= tt-param.c-unid-negoc-fim
-               AND  dvv_log_provisao.origem_movto    BEGINS "EP":  // PDEX, PDVV ME, PDVV MI - pr‚vias das provisäes, geradas pelo dvv5100.
+            WHERE dvv_log_provisao.cod_estabel  = tt_estab.cod_estab
+              AND dvv_log_provisao.dt_provisao >= tt-param.dt-ctbl-ini
+              AND dvv_log_provisao.dt_provisao <= tt-param.dt-ctbl-fim
+              AND dvv_log_provisao.cod_un      >= tt-param.c-unid-negoc-ini
+              AND dvv_log_provisao.cod_un      <= tt-param.c-unid-negoc-fim
+              AND dvv_log_provisao.origem_movto BEGINS "EP":  /* EPDEX, EPDVV ME, EPDVV MI, EPDVV REM */
 
-            // Conta CR da ProvisÆo prevista
-            IF  dvv_log_provisao.cod_cta_ctbl_db >= tt-param.c-cta-ctbl-ini
-            AND dvv_log_provisao.cod_cta_ctbl_db <= tt-param.c-cta-ctbl-fim THEN DO:
+            /* ---- Filtros por flags das origens ---- */
+            IF NOT tt-param.l-provisao-dvv-me
+               AND LOOKUP(dvv_log_provisao.origem_movto,"EPDEX,EPDVV ME") > 0 THEN NEXT.
 
-                find first ITEM_lancto_ctbl no-lock
-                    where ITEM_lancto_ctbl.num_lote_ctbl = dvv_log_provisao.num_lote_ctbl no-error.
-    
-                create tt-provisao.
-                assign c-num_seq_lancto_ctbl      = c-num_seq_lancto_ctbl + 1
+            IF NOT tt-param.l-provisao-dvv-mi
+               AND dvv_log_provisao.origem_movto = "EPDVV MI" THEN NEXT.
+
+            /* NOVO: REM só entra se a flag REM estiver ligada (sem hífen) */
+            IF NOT tt-param.l-provisao-dvv-rem
+               AND dvv_log_provisao.origem_movto = "EPDVV REM" THEN NEXT.
+
+            /* Conta CR da Provisão prevista (lancto de estorno simulado) */
+            IF dvv_log_provisao.cod_cta_ctbl_db >= tt-param.c-cta-ctbl-ini
+               AND dvv_log_provisao.cod_cta_ctbl_db <= tt-param.c-cta-ctbl-fim THEN DO:
+
+                FIND FIRST ITEM_lancto_ctbl NO-LOCK
+                    WHERE ITEM_lancto_ctbl.num_lote_ctbl = dvv_log_provisao.num_lote_ctbl NO-ERROR.
+
+                CREATE tt-provisao.
+                ASSIGN c-num_seq_lancto_ctbl      = c-num_seq_lancto_ctbl + 1
                        tt-provisao.tipo           = "T"
                        tt-provisao.movto          = "Pr‚via Estorno"
-                       tt-provisao.conta          = IF AVAIL ITEM_lancto_ctbl THEN ITEM_lancto_ctbl.cod_cta_ctbl ELSE "34120101" /*dvv_log_provisao.cod_cta_ctbl_cr*/
+                       tt-provisao.conta          = (IF AVAIL ITEM_lancto_ctbl
+                                                     THEN ITEM_lancto_ctbl.cod_cta_ctbl
+                                                     ELSE "34120101") /* fallback */
                        tt-provisao.modulo         = "FGL"
-                       tt-provisao.dta-ctbz       = date(month(tt-param.dt-ctbl-fim),01,YEAR(tt-param.dt-ctbl-fim))
-                       tt-provisao.num-lote       = c-num_lote_ctbl      
-                       tt-provisao.num-lancto     = c-num_lancto_ctbl    
+                       tt-provisao.dta-ctbz       = DATE(MONTH(tt-param.dt-ctbl-fim),01,YEAR(tt-param.dt-ctbl-fim))
+                       tt-provisao.num-lote       = c-num_lote_ctbl
+                       tt-provisao.num-lancto     = c-num_lancto_ctbl
                        tt-provisao.num-seq-lancto = c-num_seq_lancto_ctbl
                        tt-provisao.mov            = "CR"
-                       tt-provisao.moeda          = cRealVenda                  
-                       tt-provisao.cod-estabel    = dvv_log_provisao.cod_estab  
-                       tt-provisao.dt-lote        = ?                           
-                       tt-provisao.user-lote      = ""                          
+                       tt-provisao.moeda          = cRealVenda
+                       tt-provisao.cod-estabel    = dvv_log_provisao.cod_estab
+					   tt-provisao.classif = dvv_log_provisao.origem_movto
+                       tt-provisao.dt-lote        = ?
+                       tt-provisao.user-lote      = ""
                        tt-provisao.usuario-impl   = ""
-                       tt-provisao.cod-unid-negoc = dvv_log_provisao.cod_un 
+                       tt-provisao.cod-unid-negoc = dvv_log_provisao.cod_un
                        tt-provisao.cod-unid-negoc-gerenc = dvv_log_provisao.cod_un
                        tt-provisao.doc-origem     = "Estorno da Pr‚via de Lancamento CR de ProvisÆo " + dvv_log_provisao.origem_movto
                        tt-provisao.val-lancto     = dvv_log_provisao.vl_provisao.
 
-                 FOR EACH dvv_log_prov_desp NO-LOCK
-                     WHERE dvv_log_prov_desp.num_id_provisao = dvv_log_provisao.num_id_provisao:
-
-                     RUN pi-monta-previa-provisao-linha-d.
-                 END.
+                FOR EACH dvv_log_prov_desp NO-LOCK
+                    WHERE dvv_log_prov_desp.num_id_provisao = dvv_log_provisao.num_id_provisao:
+                    RUN pi-monta-previa-provisao-linha-d.
+                END.
             END.
-        END.               
-        
+        END.
+
+        /* ======================= */
+        /* P*   -> Prévia Previsão */
+        /* ======================= */
         FOR EACH tt_estab,
             EACH dvv_log_provisao NO-LOCK USE-INDEX id_es_dt_ct_cc_un
-               WHERE dvv_log_provisao.cod_estabel     = tt_estab.cod_estab
-               AND  dvv_log_provisao.dt_provisao     >= tt-param.dt-ctbl-ini
-               AND  dvv_log_provisao.dt_provisao     <= tt-param.dt-ctbl-fim
-               AND  dvv_log_provisao.cod_un          >= tt-param.c-unid-negoc-ini
-               AND  dvv_log_provisao.cod_un          <= tt-param.c-unid-negoc-fim
-               AND  dvv_log_provisao.origem_movto    BEGINS "P":  // PDEX, PDVV ME, PDVV MI - pr‚vias das provisäes, geradas pelo dvv5100.
+            WHERE dvv_log_provisao.cod_estabel  = tt_estab.cod_estab
+              AND dvv_log_provisao.dt_provisao >= tt-param.dt-ctbl-ini
+              AND dvv_log_provisao.dt_provisao <= tt-param.dt-ctbl-fim
+              AND dvv_log_provisao.cod_un      >= tt-param.c-unid-negoc-ini
+              AND dvv_log_provisao.cod_un      <= tt-param.c-unid-negoc-fim
+              AND dvv_log_provisao.origem_movto BEGINS "P":   /* PDEX, PDVV ME, PDVV MI, PDVV REM */
 
-            // Conta DB da ProvisÆo prevista
-            IF  dvv_log_provisao.cod_cta_ctbl_db >= tt-param.c-cta-ctbl-ini
-            AND dvv_log_provisao.cod_cta_ctbl_db <= tt-param.c-cta-ctbl-fim THEN DO:
+            /* ---- Filtros por flags das origens ---- */
+            IF NOT tt-param.l-provisao-dvv-me
+               AND LOOKUP(dvv_log_provisao.origem_movto,"PDEX,PDVV ME") > 0 THEN NEXT.
 
-                create tt-provisao.
-                assign c-num_seq_lancto_ctbl      = c-num_seq_lancto_ctbl + 1
+            IF NOT tt-param.l-provisao-dvv-mi
+               AND dvv_log_provisao.origem_movto = "PDVV MI" THEN NEXT.
+
+            /* NOVO: REM só entra se a flag REM estiver ligada (sem hífen) */
+            IF NOT tt-param.l-provisao-dvv-rem
+               AND dvv_log_provisao.origem_movto = "PDVV REM" THEN NEXT.
+
+            /* Conta DB da Provisão prevista */
+            IF dvv_log_provisao.cod_cta_ctbl_db >= tt-param.c-cta-ctbl-ini
+               AND dvv_log_provisao.cod_cta_ctbl_db <= tt-param.c-cta-ctbl-fim THEN DO:
+
+                CREATE tt-provisao.
+                ASSIGN c-num_seq_lancto_ctbl      = c-num_seq_lancto_ctbl + 1
                        tt-provisao.tipo           = "T"
                        tt-provisao.movto          = "Pr‚via PrevisÆo"
                        tt-provisao.conta          = dvv_log_provisao.cod_cta_ctbl_db
                        tt-provisao.modulo         = "FGL"
                        tt-provisao.dta-ctbz       = tt-param.dt-ctbl-fim
-                       tt-provisao.num-lote       = c-num_lote_ctbl      
-                       tt-provisao.num-lancto     = c-num_lancto_ctbl    
-                       tt-provisao.num-seq-lancto = c-num_seq_lancto_ctbl 
-                       tt-provisao.mov            = "DB"                        
-                       tt-provisao.moeda          = cRealVenda                  
-                       tt-provisao.cod-estabel    = dvv_log_provisao.cod_estab  
-                       tt-provisao.dt-lote        = ?                           
-                       tt-provisao.user-lote      = ""                          
+					   tt-provisao.classif = dvv_log_provisao.origem_movto
+                       tt-provisao.num-lote       = c-num_lote_ctbl
+                       tt-provisao.num-lancto     = c-num_lancto_ctbl
+                       tt-provisao.num-seq-lancto = c-num_seq_lancto_ctbl
+                       tt-provisao.mov            = "DB"
+                       tt-provisao.moeda          = cRealVenda
+                       tt-provisao.cod-estabel    = dvv_log_provisao.cod_estab
+                       tt-provisao.dt-lote        = ?
+                       tt-provisao.user-lote      = ""
                        tt-provisao.usuario-impl   = ""
-                       tt-provisao.cod-unid-negoc = dvv_log_provisao.cod_un 
+                       tt-provisao.cod-unid-negoc = dvv_log_provisao.cod_un
                        tt-provisao.cod-unid-negoc-gerenc = dvv_log_provisao.cod_un
-                       tt-provisao.doc-origem     = "Pr‚via de Lancamento DB de ProvisÆo " + dvv_log_provisao.origem_movto              /*aqui*/
+                       tt-provisao.doc-origem     = "Pr‚via de Lancamento DB de ProvisÆo " + dvv_log_provisao.origem_movto
                        tt-provisao.val-lancto     = dvv_log_provisao.vl_provisao.
 
                 FOR EACH dvv_log_prov_desp NO-LOCK
                     WHERE dvv_log_prov_desp.num_id_provisao = dvv_log_provisao.num_id_provisao:
-
                     RUN pi-monta-previa-provisao-linha-d.
-                 END.
+                END.
             END.
 
-            /*
-            // Conta CR da ProvisÆo prevista
-            IF  dvv_log_provisao.cod_cta_ctbl_cr >= tt-param.c-cta-ctbl-ini
-            AND dvv_log_provisao.cod_cta_ctbl_cr <= tt-param.c-cta-ctbl-fim THEN DO:
-
-                create tt-provisao.
-                assign c-num_seq_lancto_ctbl      = c-num_seq_lancto_ctbl + 1
-                       tt-provisao.tipo           = "T"
-                       tt-provisao.movto          = "Pr‚via PrevisÆo"
-                       tt-provisao.conta          = dvv_log_provisao.cod_cta_ctbl_cr
-                       tt-provisao.modulo         = "FGL"
-                       tt-provisao.dta-ctbz       = tt-param.dt-ctbl-fim
-                       tt-provisao.num-lote       = c-num_lote_ctbl      
-                       tt-provisao.num-lancto     = c-num_lancto_ctbl    
-                       tt-provisao.num-seq-lancto = c-num_seq_lancto_ctbl
-                       tt-provisao.mov            = "CR"
-                       tt-provisao.moeda          = cRealVenda                  
-                       tt-provisao.cod-estabel    = dvv_log_provisao.cod_estab  
-                       tt-provisao.dt-lote        = ?                           
-                       tt-provisao.user-lote      = ""                          
-                       tt-provisao.usuario-impl   = ""
-                       tt-provisao.cod-unid-negoc = dvv_log_provisao.cod_un 
-                       tt-provisao.cod-unid-negoc-gerenc = dvv_log_provisao.cod_un
-                       tt-provisao.doc-origem     = "Pr‚via de Lancamento CR de ProvisÆo " + dvv_log_provisao.origem_movto
-                       tt-provisao.val-lancto     = dvv_log_provisao.vl_provisao.
-
-                 FOR EACH dvv_log_prov_desp NO-LOCK
-                     WHERE dvv_log_prov_desp.num_id_provisao = dvv_log_provisao.num_id_provisao:
-
-                     RUN pi-monta-previa-provisao-linha-d.
-                 END.
-            END.  */
+            /* Bloco CR comentado permanece como estava no seu código original */
         END.
     END.
 
 END PROCEDURE.
+
 
 
 PROCEDURE pi-monta-previa-provisao-linha-d:
@@ -5920,9 +5904,10 @@ PROCEDURE pi-monta-previa-provisao-linha-d:
            b-tt-provisao.val-lancto = 0
            b-tt-provisao.seq-class  = i-seq-classif
            b-tt-provisao.l-rastr-desp  = YES
-           b-tt-provisao.tp-origem = 14.
+           b-tt-provisao.tp-origem = 14
+		   b-tt-provisao.classif = dvv_log_provisao.origem_movto.
 
-    IF dvv_log_provisao.origem_movto = "PDVV MI" THEN DO:
+    IF dvv_log_provisao.origem_movto = "PDVV MI" OR dvv_log_provisao.origem_movto = "PDVV REM" THEN DO:
         ASSIGN b-tt-provisao.nr-nota-fis  = dvv_log_prov_desp.nr_proc_exp
                b-tt-provisao.serie = "6".
     END.

@@ -416,28 +416,43 @@ DO:
         FIND CURRENT dvv_movto_mi NO-LOCK NO-ERROR.
     END.
 	
-	/* --- NOVO: tratar DVV-REM (Remessa/Venda Consignada) --- */
-    IF dvv_log_provisao.origem_movto = "DVV REM" THEN DO:
-        /* 
-           Atenção: estamos reutilizando a mesma origem de DVV ME (tabela dvv_movto)
-           e o mesmo flag CHAR_2 posição 1. Se sua base usar outra tabela/campo
-           para remessa, troque aqui por ela.
-        */
-        FIND FIRST dvv_movto
-          WHERE /* opcional: dvv_movto.cod_estabel = tt-dvv_log_prov_desp_item.cod_estabel AND */
-                dvv_movto.NUM_PROCESSO = tt-dvv_log_prov_desp_item.nr_proc_exp
-            AND dvv_movto.TIPO_DESPESA = tt-dvv_log_prov_desp_item.cod_despesa
-        EXCLUSIVE-LOCK NO-ERROR.
+	 /* =========================
+       NOVO: DVV REM / PDVV REM / EPDVV REM
+       =========================
+       Observação: o campo "Provisiona" do DVV REM reside em dvv_movto.CHAR_2 (mesma regra do ME).
+       Usamos um fallback de estabelecimento, igual ao do ME.
+    */
+    IF INDEX(dvv_log_provisao.origem_movto, "DVV REM") > 0 THEN DO:
+        /* 1) tenta no estab do processo (quando o log foi gerado por processo desse estab) */
+        FIND FIRST dvv_movto EXCLUSIVE-LOCK
+             WHERE dvv_movto.num_processo = tt-dvv_log_prov_desp_item.nr_proc_exp
+               AND dvv_movto.tipo_despesa = tt-dvv_log_prov_desp_item.cod_despesa
+               AND dvv_movto.cod_estabel  = dvv_log_provisao.cod_estabel NO-ERROR.
 
-        IF AVAIL dvv_movto THEN
-            ASSIGN OVERLAY(dvv_movto.CHAR_2,1,1) = IF tt-dvv_log_prov_desp_item.provisiona = "Sim" THEN "0" ELSE "1".
-        FIND CURRENT dvv_movto NO-LOCK NO-ERROR.
-    END.
+        /* 2) se não achou, tenta pelo estab gravado na própria despesa do log */
+        IF NOT AVAILABLE dvv_movto THEN
+            FIND FIRST dvv_movto EXCLUSIVE-LOCK
+                 WHERE dvv_movto.num_processo = tt-dvv_log_prov_desp_item.nr_proc_exp
+                   AND dvv_movto.tipo_despesa = tt-dvv_log_prov_desp_item.cod_despesa
+                   AND dvv_movto.cod_estabel  = tt-dvv_log_prov_desp_item.cod_estabel NO-ERROR.
 
-    /* --- NOVO: prévias PDVV-REM não escrevem na origem (comportamento igual às demais prévias) --- */
-    IF dvv_log_provisao.origem_movto = "PDVV-REM" 
-       OR dvv_log_provisao.origem_movto = "EPDVV-REM" THEN DO:
-        /* nenhuma escrita em tabela origem; apenas atualiza dvv_log_prov_desp abaixo */
+        /* 3) último fallback: varre estabelecimentos */
+        IF NOT AVAILABLE dvv_movto THEN DO:
+            FOR EACH estabelec NO-LOCK:
+                FIND FIRST dvv_movto EXCLUSIVE-LOCK
+                     WHERE dvv_movto.num_processo = tt-dvv_log_prov_desp_item.nr_proc_exp
+                       AND dvv_movto.tipo_despesa = tt-dvv_log_prov_desp_item.cod_despesa
+                       AND dvv_movto.cod_estabel  = estabelec.cod-estabel NO-ERROR.
+                IF AVAILABLE dvv_movto THEN LEAVE.
+            END.
+        END.
+
+        /* 4) alterna a flag de Provisiona (CHAR_2, pos.1) e libera o lock */
+        IF AVAILABLE dvv_movto THEN DO:
+            ASSIGN OVERLAY(dvv_movto.CHAR_2,1,1)
+                   = (IF tt-dvv_log_prov_desp_item.provisiona = "Sim" THEN "0" ELSE "1").
+            FIND CURRENT dvv_movto NO-LOCK NO-ERROR.
+        END.
     END.
 
     FIND dvv_log_prov_desp WHERE 

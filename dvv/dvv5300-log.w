@@ -35,8 +35,7 @@ DEF INPUT PARAMETER p-r-dvv_log_provisao AS ROWID NO-UNDO.
 DEF BUFFER dvv_log_provisao_exec FOR dvv_log_provisao_exec.
 
 DEF TEMP-TABLE tt-dvv_log_provisao_exec NO-UNDO LIKE dvv_log_provisao_exec
-    FIELD hr_atualiz_fmt AS CHAR FORMAT "99:99:99"
-    FIELD r_rowid        AS ROWID.
+    FIELD r_rowid    AS ROWID.
 
 
 /* Local Variable Definitions ---                                       */
@@ -77,11 +76,10 @@ END PROCEDURE.
 &Scoped-define FIELDS-IN-QUERY-BROWSE-2 tt-dvv_log_provisao_exec.sequencia tt-dvv_log_provisao_exec.dt_atualiz tt-dvv_log_provisao_exec.hr_atualiz tt-dvv_log_provisao_exec.status_execucao tt-dvv_log_provisao_exec.mensagem tt-dvv_log_provisao_exec.cod_usuario   
 &Scoped-define ENABLED-FIELDS-IN-QUERY-BROWSE-2   
 &Scoped-define SELF-NAME BROWSE-2
-&Scoped-define QUERY-STRING-BROWSE-2 FOR EACH tt-dvv_log_provisao_exec BY tt-dvv_log_provisao_exec.sequencia
-&Scoped-define OPEN-QUERY-BROWSE-2 OPEN QUERY {&SELF-NAME} FOR EACH tt-dvv_log_provisao_exec BY tt-dvv_log_provisao_exec.sequencia.
+&Scoped-define QUERY-STRING-BROWSE-2 FOR EACH tt-dvv_log_provisao_exec
+&Scoped-define OPEN-QUERY-BROWSE-2 OPEN QUERY {&SELF-NAME} FOR EACH tt-dvv_log_provisao_exec.
 &Scoped-define TABLES-IN-QUERY-BROWSE-2 tt-dvv_log_provisao_exec
 &Scoped-define FIRST-TABLE-IN-QUERY-BROWSE-2 tt-dvv_log_provisao_exec
-
 
 
 /* Definitions for FRAME f-cad                                          */
@@ -141,7 +139,7 @@ DEFINE BROWSE BROWSE-2
   QUERY BROWSE-2 DISPLAY
       tt-dvv_log_provisao_exec.sequencia       WIDTH 5           column-label "Seq"
       tt-dvv_log_provisao_exec.dt_atualiz                        column-label "Dt.Atualiz" 
-      tt-dvv_log_provisao_exec.hr_atualiz_fmt  FORMAT "99:99:99" column-label "Hr.Atualiz" 
+      tt-dvv_log_provisao_exec.hr_atualiz      FORMAT "99:99:99" column-label "Hr.Atualiz" 
       tt-dvv_log_provisao_exec.status_execucao WIDTH 7   COLUMN-LABEL "Status"
       tt-dvv_log_provisao_exec.mensagem        WIDTH 200 COLUMN-LABEL "Mensagem"
       tt-dvv_log_provisao_exec.cod_usuario               COLUMN-LABEL "Usuario"
@@ -566,14 +564,8 @@ PROCEDURE pi-gerar-dados :
     FOR EACH dvv_log_provisao_exec WHERE
              dvv_log_provisao_exec.num_id_provisao = dvv_log_provisao.num_id_provisao NO-LOCK:
         CREATE tt-dvv_log_provisao_exec.
-		BUFFER-COPY dvv_log_provisao_exec TO tt-dvv_log_provisao_exec.
-		ASSIGN
-		  tt-dvv_log_provisao_exec.hr_atualiz_fmt =
-			IF tt-dvv_log_provisao_exec.hr_atualiz = ? OR tt-dvv_log_provisao_exec.hr_atualiz = "" THEN ""
-			ELSE SUBSTRING(tt-dvv_log_provisao_exec.hr_atualiz,1,2) + ":" +
-				 SUBSTRING(tt-dvv_log_provisao_exec.hr_atualiz,3,2) + ":" +
-				 SUBSTRING(tt-dvv_log_provisao_exec.hr_atualiz,5,2)
-		  tt-dvv_log_provisao_exec.r_rowid = ROWID(dvv_log_provisao_exec).
+        BUFFER-COPY dvv_log_provisao_exec TO tt-dvv_log_provisao_exec.
+        ASSIGN tt-dvv_log_provisao_exec.r_rowid = ROWID(dvv_log_provisao_exec).
     
     END.
     

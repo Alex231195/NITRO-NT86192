@@ -15,6 +15,7 @@ define temp-table tt-param
     FIELD l-realizacao-dvv-mi     AS LOG
     FIELD l-provisao-dvv-me       AS LOG
     FIELD l-provisao-dvv-mi       AS LOG
+	FIELD l-provisao-dvv-rem      AS LOG
     FIELD l-previa-provisoes      AS LOG
     FIELD l-estorno               AS LOG
     FIELD c-estab-ini             AS CHAR
